@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Warwick · Furie de Zaun</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #050807; }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  .title {
+    position: fixed; left: 4.2vw; bottom: 7vh; pointer-events: none; color: #e9eee6;
+    font-family: "Teko", "Oswald", "Arial Narrow", sans-serif; text-shadow: 0 0 24px rgba(0,0,0,.6);
+    transition: opacity 1.2s ease;
+  }
+  .title .eyebrow { font-size: clamp(12px, 1.05vh, 18px); letter-spacing: .32em; text-transform: uppercase; color: var(--chem, #7cff4f); opacity: .85; }
+  .title .name { font-size: clamp(64px, 11vh, 190px); line-height: .8; font-weight: 600; letter-spacing: .04em; }
+  .title[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="title" class="title" hidden>
+  <div class="eyebrow">La Furie déchaînée de Zaun</div>
+  <div class="name">WARWICK</div>
+</div>
+<script src="lib/three.min.js"></script>
+<script src="lib/EffectComposer.js"></script>
+<script src="lib/RenderPass.js"></script>
+<script src="lib/ShaderPass.js"></script>
+<script src="lib/CopyShader.js"></script>
+<script src="lib/LuminosityHighPassShader.js"></script>
+<script src="lib/UnrealBloomPass.js"></script>
+<script src="lib/FXAAShader.js"></script>
+<script src="lib/BufferGeometryUtils.js"></script>
+<script src="js/wallpaper.js"></script>
+<script src="js/environment.js"></script>
+<script src="js/warwick.js"></script>
+<script src="js/post.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
