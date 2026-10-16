@@ -3,7 +3,10 @@
  * Tout le corps est UN SkinnedMesh à UN matériau : couleur, rugosité, métal et émission (chimie, yeux) sont
  * portés par les sommets ; un petit shader injecté ajoute le hérissement de la crinière, le flux lumineux dans
  * les tuyaux, le reflet vert de la cuve sur la fourrure et un liseré de contre-jour.
- * À côté : liquide de la cuve (additif), verre, bulles (instanciées) et deux halos d'yeux → ~7 appels de dessin.
+ * À côté : liquide de la cuve (additif), verre, bulles (instanciées), deux halos d'yeux, et pendant les événements
+ * la bave et la traînée des griffes → 6 à 8 appels de dessin (+1 pour l'ombre), ~60 k triangles (~50 k en « low »).
+ * Animation : couches de sinus incommensurables + ressorts amortis (jamais de boucle visible), pieds plantés par IK
+ * analytique à 2 os (bassin libre), coup de griffe piloté par une IK du bras droit sur une trajectoire chorégraphiée.
  * Repère : mètres, pieds à y = 0, face à +Z. Les os ont une rotation de repos nulle (pose de liaison = pose
  * d'attente), toutes les rotations animées sont donc des écarts autour des axes du modèle.
  */
@@ -111,10 +114,10 @@ const tankDist = p => { const d = p.clone().sub(TC), h = clamp(d.dot(TAX), -TH /
  * Palette (hex sRGB → linéaire) et réglages de surface [rugosité, métal, émission chimie, émission yeux]
  * ===================================================================================== */
 const C = {
-  furD: col(0x151b25), furM: col(0x283242), furB: col(0x41526d), furV: col(0x312c42), furL: col(0x5f6b7b), furP: col(0x96a1ae),
+  furD: col(0x151b25), furM: col(0x283242), furB: col(0x41526d), furV: col(0x312c42), furL: col(0x56627a), furP: col(0x8592a8),
   skin: col(0x141013), skinG: col(0x3a3036), gum: col(0x5a1420), tongue: col(0x7c2632), tooth: col(0xe4dcc6),
   clawB: col(0x2a2522), clawT: col(0xd9d1bc), iron: col(0x464c53), ironD: col(0x24282d), rust: col(0x5e3420), brass: col(0x9c7136),
-  leather: col(0x33241b), rubber: col(0x121815), white: col(0xffffff), eye: col(0xffe0d0), liquid: col(0x335533),
+  leather: col(0x33241b), rubber: col(0x121815), white: col(0xffffff), eye: col(0x3a0c0c), liquid: col(0x335533),
 };
 const SF = {
   fur: [0.9, 0, 0, 0], skin: [0.5, 0, 0, 0], gum: [0.4, 0, 0, 0], tooth: [0.3, 0.05, 0, 0], claw: [0.3, 0.45, 0, 0],
@@ -227,8 +230,8 @@ function rayExit(o, d, set) {
   return { t: best, v: bv };
 }
 
-/* ---------- Mèches de fourrure : losange effilé en 2 tronçons, dégradé racine → pointe, hérissable ---------- */
-const RB = [new V3(), new V3(), new V3(), new V3()], RM = [new V3(), new V3(), new V3(), new V3()];
+/* ---------- Mèches de fourrure : prisme triangulaire effilé en 2 tronçons (9 triangles), dégradé racine → pointe, hérissable ---------- */
+const RB = [new V3(), new V3(), new V3()], RM = [new V3(), new V3(), new V3()];
 const _sd = new V3(), _up = new V3(), _b0 = new V3(), _m = new V3(), _tip = new V3(), _dr = new V3(), _q1 = new V3(), _q2 = new V3();
 const _cR = new THREE.Color(), _cT = new THREE.Color(), _cMid = new THREE.Color();
 const FX0 = [0, 0, 0, 0], FXM = [0, 0, 0, 0], FXT = [0, 0, 0, 0];
@@ -248,11 +251,12 @@ function lock(bld, p, n, dir, len, wid, cR, cT, o) {
   _up.crossVectors(dir, _sd).normalize();
   const th = wid * (o.thick || 0.3), arch = len * (o.arch != null ? o.arch : 0.08), curl = len * (o.curl != null ? o.curl : 0.08);
   _b0.copy(p).addScaledVector(n, -0.015);
-  RB[0].copy(_b0).addScaledVector(_sd, wid); RB[1].copy(_b0).addScaledVector(_up, th);
-  RB[2].copy(_b0).addScaledVector(_sd, -wid); RB[3].copy(_b0).addScaledVector(_up, -th * 0.6);
+  // section : arête dorsale + deux flancs (le dessous, collé au corps, ne se voit pas)
+  RB[0].copy(_b0).addScaledVector(_sd, wid).addScaledVector(_up, -th * 0.35); RB[1].copy(_b0).addScaledVector(_up, th);
+  RB[2].copy(_b0).addScaledVector(_sd, -wid).addScaledVector(_up, -th * 0.35);
   _m.copy(_b0).addScaledVector(dir, len * 0.5).addScaledVector(_up, arch);
-  RM[0].copy(_m).addScaledVector(_sd, wid * 0.62); RM[1].copy(_m).addScaledVector(_up, th * 0.75);
-  RM[2].copy(_m).addScaledVector(_sd, -wid * 0.62); RM[3].copy(_m).addScaledVector(_up, -th * 0.45);
+  RM[0].copy(_m).addScaledVector(_sd, wid * 0.62).addScaledVector(_up, -th * 0.25); RM[1].copy(_m).addScaledVector(_up, th * 0.75);
+  RM[2].copy(_m).addScaledVector(_sd, -wid * 0.62).addScaledVector(_up, -th * 0.25);
   _tip.copy(_b0).addScaledVector(dir, len).addScaledVector(_up, arch * 0.5 + curl);
   // hérissement : la mèche se redresse vers la normale
   const raise = o.raise != null ? o.raise : 1;
@@ -264,8 +268,8 @@ function lock(bld, p, n, dir, len, wid, cR, cT, o) {
   _cMid.copy(cR).lerp(cT, 0.55);
   setW(o, p);
   const s = o.surf || SF.fur;
-  for (let k = 0; k < 4; k++) {
-    const k1 = (k + 1) & 3;
+  for (let k = 0; k < 3; k++) {
+    const k1 = k === 2 ? 0 : k + 1;
     _ref.copy(_b0).add(_m).multiplyScalar(0.5);
     triO(bld, RB[k], RB[k1], RM[k1], cR, cR, _cMid, FX0, FX0, FXM, _ref, s);
     triO(bld, RB[k], RM[k1], RM[k], cR, _cMid, _cMid, FX0, FXM, FXM, _ref, s);
@@ -538,11 +542,12 @@ for (const s of SIDES) {
   ellip(core, A.clone(), v3(0.09, 0.095, 0.095), qm, { w: 'meta' + k, color: C.furD, detail: 1 });
   const meta = ellip(core, A.clone().addScaledVector(mt, 0.5), v3(0.078, mt.length() * 0.56, 0.088), qm, { w: 'meta' + k, color: C.furD });
   // patte : coussinet, orteils, griffes
-  ellip(core, BL.clone().add(v3(0, -0.0, 0.07)), v3(0.14, 0.075, 0.17), null, { w: 'foot' + k, color: C.furD, detail: 2 });
+  // grosse patte (semelle à y = 0) : coussinet, quatre orteils écartés, griffes qui mordent le sol
+  ellip(core, BL.clone().add(v3(0, 0.005, 0.09)), v3(0.17, 0.08, 0.21), null, { w: 'foot' + k, color: C.furD, detail: 2 });
   for (let t = 0; t < 4; t++) {
-    const ox = (t - 1.5) * 0.06, tp = BL.clone().add(v3(ox + s * 0.01, -0.025, 0.23 - Math.abs(t - 1.5) * 0.035));
-    ellip(core, tp, v3(0.045, 0.045, 0.075), qE(0.2, ox * 1.5, 0), { w: 'foot' + k, color: C.skinG, detail: 1, vol: false });
-    blade(core, tp.clone().add(v3(0, 0.005, 0.06)), v3(ox * 0.8, -0.25, 1), v3(0, -1, 0), 0.11, 0.024, { w: 'foot' + k, bend: 0.4 });
+    const ox = (t - 1.5) * 0.075, tp = BL.clone().add(v3(ox + s * 0.012, -0.02, 0.29 - Math.abs(t - 1.5) * 0.045));
+    ellip(core, tp, v3(0.055, 0.052, 0.09), qE(0.2, ox * 1.5, 0), { w: 'foot' + k, color: C.skinG, detail: 1, vol: false });
+    blade(core, tp.clone().add(v3(0, 0.006, 0.075)), v3(ox * 0.8, -0.28, 1), v3(0, -1, 0), 0.14, 0.03, { w: 'foot' + k, bend: 0.42 });
   }
   blade(core, A.clone().add(v3(0, -0.02, 0.05)), v3(s * 0.2, -1, 0.5), v3(0, 0, 1), 0.08, 0.02, { w: 'meta' + k }); // ergot
   LEGV[k] = { thigh, shin, calf, meta, back };
@@ -609,16 +614,16 @@ for (const s of SIDES) {
 }
 // oreilles : pyramide aplatie, intérieur de peau, touffe
 for (const s of SIDES) {
-  const k = SK(s), eb = J('ear' + k), tipP = eb.clone().add(hr(s * 0.12, 0.27, -0.19));
-  const f0 = eb.clone().add(hr(-s * 0.07, -0.01, 0.06)), f1 = eb.clone().add(hr(s * 0.095, -0.03, 0.04)), bk = eb.clone().add(hr(0, 0.0, -0.09));
+  const k = SK(s), eb = J('ear' + k), tipP = eb.clone().add(hr(s * 0.13, 0.31, -0.14)); // dressée : casse la silhouette de la crinière
+  const f0 = eb.clone().add(hr(-s * 0.085, -0.01, 0.065)), f1 = eb.clone().add(hr(s * 0.115, -0.035, 0.04)), bk = eb.clone().add(hr(0, 0.0, -0.1));
   const fm = f0.clone().add(f1).multiplyScalar(0.5).addScaledVector(tipP.clone().sub(eb), 0.35).add(hr(0, 0, -0.04));
   const ref = eb.clone().add(hr(0, 0.08, -0.04)), refI = eb.clone().add(hr(0, 0.1, -0.12));
   setW({ w: 'ear' + k }, eb);
-  const cO = C.furD, cI = C.skinG;
-  triO(core, f0, fm, tipP, cI, cI, cI, null, null, null, refI, SF.skin);
-  triO(core, fm, f1, tipP, cI, cI, cI, null, null, null, refI, SF.skin);
-  triO(core, f0, bk, tipP, cO, cO, C.furB, null, null, null, ref, SF.fur);
-  triO(core, f1, bk, tipP, cO, cO, C.furB, null, null, null, ref, SF.fur);
+  const cO = C.furD, cI = C.skinG, cIT = col(0x5a4650);
+  triO(core, f0, fm, tipP, cI, cIT, cIT, null, null, null, refI, SF.skin);
+  triO(core, fm, f1, tipP, cIT, cI, cIT, null, null, null, refI, SF.skin);
+  triO(core, f0, bk, tipP, cO, cO, C.furL, null, null, null, ref, SF.fur);
+  triO(core, f1, bk, tipP, cO, cO, C.furL, null, null, null, ref, SF.fur);
   for (let t = 0; t < 4; t++) { // touffe claire à l'intérieur de l'oreille
     const bp = f0.clone().lerp(f1, 0.25 + t * 0.17).addScaledVector(tipP.clone().sub(eb), 0.08).add(hr(0, 0, -0.01));
     lock(core, bp, v3(0, 0, 1), tipP.clone().sub(bp).normalize().add(v3(0, 0, 0.25)).normalize(), 0.13 * HS, 0.022 * HS, C.furL, C.furP, { w: 'ear' + k, raise: 0 });
@@ -629,8 +634,9 @@ const sideOf = p => (p.x >= 0 ? 1 : -1);
 const maneR = cmix(C.furD, C.furV, 0.2), maneT = (p, n, out) => out.copy(C.furB).lerp(C.furP, rnd() < 0.2 ? 0.5 : 0.08);
 const lightR = cst(C.furL), lightT = cst(C.furP);
 const darkR = cst(C.furD), midT = cmix(C.furM, C.furB, 0.6);
+const awayFromEars = p => p.distanceTo(J('earL')) > 0.085 * HS && p.distanceTo(J('earR')) > 0.085 * HS;
 fur(core, cran, 40, {
-  filter: (p, n) => n.y > -0.1 && p.z < HJ.z + 0.07, flow: (p, n, d) => d.set(p.x * 1.2, 0.2, -1),
+  filter: (p, n) => n.y > -0.1 && p.z < HJ.z + 0.07 && awayFromEars(p), flow: (p, n, d) => d.set(p.x * 1.2, 0.2, -1),
   len: [0.16, 0.28], wid: [0.045, 0.07], lift: 0.4, cR: maneR, cT: maneT, raise: 0.8,
 });
 for (const s of SIDES) {
@@ -1056,18 +1062,25 @@ const tankBase = toS2(tankAt(-TH / 2 + 0.05)), tankAxis = TAX.clone(), tankPX = 
 const tankFill = TH - 0.2;
 
 /* ---------- Halos des yeux ---------- */
+// Texture : noyau brûlant, halo doux et traînée horizontale (reflet anamorphique) : un regard qui « tranche ».
 const glowTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,255,255,0.55)');
-  gr.addColorStop(0.45, 'rgba(255,255,255,0.12)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  let gr = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.1, 'rgba(255,255,255,0.8)');
+  gr.addColorStop(0.3, 'rgba(255,255,255,0.2)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.05)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, S, S);
+  g.save(); g.translate(S / 2, S / 2); g.scale(1, 0.06);
+  gr = g.createRadialGradient(0, 0, 0, 0, 0, S / 2);
+  gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, S / 2, 0, Math.PI * 2); g.fill(); g.restore();
   const t = new THREE.CanvasTexture(c); return t;
 })();
-const eyeMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff2020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+const eyeMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff2020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
+// sortie de l'orbite (avant + extérieur) : les arcades et la collerette ne masquent plus le halo de trois quarts
 const eyeGlows = SIDES.map(s => {
   const sp = new THREE.Sprite(eyeMat);
-  sp.position.copy(hp(s * 0.104, 0.066, 0.27)).sub(HJ); sp.scale.setScalar(0.25); sp.renderOrder = 4;
+  sp.position.copy(hp(s * 0.118, 0.066, 0.31)).sub(HJ); sp.scale.set(0.3, 0.16, 1); sp.renderOrder = 4;
   B.head.add(sp); return sp;
 });
 
@@ -1083,6 +1096,8 @@ const DR = { phase: 0, t0: 0, next: 7, vy: 0 };
  * Animation
  * ===================================================================================== */
 const P0 = B.pelvis.position.clone();
+// colonne, cou, tête : lacet appliqué en dernier (« il pivote, puis se cambre ») → le hurlement présente son profil
+for (const n of ['pelvis', 'spine1', 'spine2', 'neck', 'head']) B[n].rotation.order = 'YXZ';
 const nz = (t, k) => (Math.sin(t * 0.731 + k) + 0.6 * Math.sin(t * 1.377 + k * 2.13) + 0.3 * Math.sin(t * 2.913 + k * 3.71)) / 1.9;
 let aseed = 9157;
 const arnd = () => ((aseed = (aseed * 16807) % 2147483647) / 2147483647);
@@ -1142,6 +1157,104 @@ const FING = SIDES.map(s => {
   return { s, k, fingers: h.fingers, thumb: B['th' + k], axis: h.spread.clone().multiplyScalar(-s), taxis: h.hd.clone().cross(h.palm).normalize().multiplyScalar(s) };
 });
 const AR = SIDES.map(s => { const k = SK(s); return { s, clav: B['clav' + k], arm: B['arm' + k], fore: B['fore' + k], hand: B['hand' + k] }; });
+
+/* ---------- IK du bras droit (coup de griffe) : le poignet suit une trajectoire chorégraphiée ----------
+ * Clés en coordonnées « modèle au repos » attachées au buste (spine2) : la torsion du buste s'ajoute au geste.
+ * [poignet, direction du coude] : armé derrière l'épaule → arc haut devant → fin de frappe basse en travers → accompagnement. */
+const SWK = [
+  [v3(-1.28, 3.22, -0.04), v3(-0.3, -0.8, -0.5)],   // armé : patte levée bien au-dessus et en dehors de l'épaule (silhouette)
+  [v3(-0.78, 2.5, 0.95), v3(-0.9, -0.15, -0.4)],    // frappe, haut devant
+  [v3(0.22, 1.38, 1.0), v3(-0.55, -0.35, -0.75)],   // frappe, bas en travers
+  [v3(0.42, 1.12, 0.62), v3(-0.45, -0.45, -0.8)],   // accompagnement
+];
+const ARM_IK = (() => {
+  const k = 'R', SL = J('armR'), EL = J('foreR'), WL = J('handR');
+  const u0 = EL.clone().sub(SL), f0 = WL.clone().sub(EL), n0 = new V3().crossVectors(u0, f0).normalize();
+  return {
+    a: u0.length(), b: f0.length(), S2: J('spine2').clone(), shoulderLocal: B.armR.position.clone(),
+    iA: basisQ(u0, n0, new Quat()).invert(), iF: basisQ(f0, n0, new Quat()).invert(), k,
+  };
+})();
+const _m4a = new THREE.Matrix4(), _m4b = new THREE.Matrix4(), _qS2 = new Quat(), _qC = new Quat(), _qAb = new Quat(), _qFb = new Quat();
+const _sh = new V3(), _tg2 = new V3(), _pole = new V3(), _el = new V3(), _ad = new V3(), _an = new V3(), _ik1 = new V3(), _ik2 = new V3();
+const _qIKa = new Quat(), _qIKf = new Quat();
+// Catmull-Rom sur les clés (extrémités dupliquées), u ∈ [0, n-1]
+const cr = (a, b, c, d, f) => 0.5 * (2 * b + (c - a) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (3 * b - a - 3 * c + d) * f * f * f);
+function swPath(u, outP, outPole) {
+  const n = SWK.length, i = Math.min(n - 2, Math.max(0, Math.floor(u))), f = clamp(u - i, 0, 1);
+  const p0 = SWK[Math.max(0, i - 1)][0], p1 = SWK[i][0], p2 = SWK[i + 1][0], p3 = SWK[Math.min(n - 1, i + 2)][0];
+  outP.set(cr(p0.x, p1.x, p2.x, p3.x, f), cr(p0.y, p1.y, p2.y, p3.y, f), cr(p0.z, p1.z, p2.z, p3.z, f));
+  outPole.copy(SWK[i][1]).lerp(SWK[i + 1][1], f * f * (3 - 2 * f)).normalize();
+}
+// Résout bras + avant-bras droits (repère du corps) et écrit les quaternions locaux dans _qIKa / _qIKf.
+function solveArmIK(wristBind, poleBind) {
+  const P = B.pelvis, A = AR[1];
+  P.updateMatrix(); B.spine1.updateMatrix(); B.spine2.updateMatrix(); A.clav.updateMatrix();
+  _m4a.multiplyMatrices(P.matrix, B.spine1.matrix).multiply(B.spine2.matrix);       // buste → corps
+  _qS2.copy(P.quaternion).multiply(B.spine1.quaternion).multiply(B.spine2.quaternion);
+  _qC.copy(_qS2).multiply(A.clav.quaternion);
+  _m4b.multiplyMatrices(_m4a, A.clav.matrix);
+  _sh.copy(ARM_IK.shoulderLocal).applyMatrix4(_m4b);                                  // épaule
+  _tg2.copy(wristBind).sub(ARM_IK.S2).applyMatrix4(_m4a);                             // cible du poignet
+  _pole.copy(poleBind).applyQuaternion(_qS2);
+  const a = ARM_IK.a, b = ARM_IK.b;
+  _ad.subVectors(_tg2, _sh);
+  const dist = clamp(_ad.length(), Math.abs(a - b) + 0.03, (a + b) * 0.995);
+  _ad.normalize();
+  _pole.addScaledVector(_ad, -_pole.dot(_ad)).normalize();
+  const x = (a * a - b * b + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, a * a - x * x));
+  _el.copy(_sh).addScaledVector(_ad, x).addScaledVector(_pole, h);
+  _tg2.copy(_sh).addScaledVector(_ad, dist);
+  _ik1.subVectors(_el, _sh); _ik2.subVectors(_tg2, _el);
+  _an.crossVectors(_ik1, _ik2);
+  if (_an.lengthSq() < 1e-8) _an.crossVectors(_ik1, _pole);
+  _an.normalize();
+  basisQ(_ik1, _an, _qAb).multiply(ARM_IK.iA);
+  basisQ(_ik2, _an, _qFb).multiply(ARM_IK.iF);
+  _qIKa.copy(_qC).invert().multiply(_qAb);
+  _qIKf.copy(_qAb).invert().multiply(_qFb);
+}
+const _swP = new V3(), _swPole = new V3();
+
+/* ---------- Traînée des griffes : 4 rubans additifs qui suivent les pointes pendant la frappe ---------- */
+const TR_N = 14, TR_C = 4;
+const trPos = new Float32Array(TR_C * TR_N * 2 * 3), trA = new Float32Array(TR_C * TR_N * 2);
+const trHist = new Float32Array(TR_C * TR_N * 6); // par griffe et par échantillon : pointe (3) + base (3)
+const trAge = new Float64Array(TR_N); // temps absolus : double précision (le fond tourne des heures)
+let trHead = 0, trFill = 0;
+const trGeo = new THREE.BufferGeometry();
+trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3).setUsage(THREE.DynamicDrawUsage));
+trGeo.setAttribute('aA', new THREE.BufferAttribute(trA, 1).setUsage(THREE.DynamicDrawUsage));
+{
+  const idx = [];
+  for (let c = 0; c < TR_C; c++) for (let i = 0; i + 1 < TR_N; i++) {
+    const o = (c * TR_N + i) * 2;
+    idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2);
+  }
+  trGeo.setIndex(idx);
+}
+const trMat = new THREE.ShaderMaterial({
+  uniforms: { uColor: { value: new THREE.Color() } },
+  vertexShader: 'attribute float aA; varying float vA; void main(){ vA = aA; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform vec3 uColor; varying float vA; void main(){ gl_FragColor = vec4(uColor * vA, 1.0);\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}',
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+const trail = new THREE.Mesh(trGeo, trMat);
+trail.name = 'warwick-griffes'; trail.frustumCulled = false; trail.visible = false; trail.renderOrder = 5;
+root.add(trail);
+// pointes et bases des griffes droites, dans le repère de chaque phalange
+const TR_TIP = [], TR_BASE = [];
+{
+  const h = HAND.R;
+  for (let f = 0; f < 4; f++) {
+    const kn = J('fR' + f), fd = h.hd.clone().addScaledVector(h.palm, 0.15).normalize();
+    const cv = h.palm.clone().multiplyScalar(0.75).add(v3(0, 0, 0.5)), cl = [0.3, 0.34, 0.31, 0.25][f];
+    const base = kn.clone().addScaledVector(fd, 0.09), cvn = cv.clone().addScaledVector(fd, -cv.dot(fd)).normalize();
+    const tip = base.clone().addScaledVector(fd, cl).addScaledVector(cvn, cl * 0.36);
+    TR_TIP.push(tip.sub(kn)); TR_BASE.push(base.clone().addScaledVector(fd, cl * 0.78).sub(kn));
+  }
+}
+const _rootInv = new THREE.Matrix4(), _trv = new V3();
 const EARS = SIDES.map(s => B['ear' + SK(s)]);
 const TAIL = []; for (let i = 0; i < TAIL_N; i++) TAIL.push(B['tail' + i]);
 const _o3 = new THREE.Object3D(), _bubP = new V3();
@@ -1152,15 +1265,47 @@ const ZERO_AUDIO = { level: 0, bass: 0, mid: 0, high: 0, beat: 0 }, ZERO_PTR = {
 const TWRAP = 40 * Math.PI;
 let bubCount = BUB_N;
 
+// Échantillonne les pointes à ~60 Hz (longueur de traînée indépendante du nombre d'images), l'échantillon de tête suit la griffe.
+const TR_COL = col(0xb4d0ff), _trC = new THREE.Color();
+function updateTrail(ts, t, Hn, blood) {
+  if (ts < 0.27 || ts >= 0.8) { if (trail.visible) trail.visible = false; trFill = 0; return; }
+  if (ts < 0.6) {
+    root.updateMatrixWorld(true);
+    _rootInv.copy(root.matrixWorld).invert();
+    if (trFill === 0 || t - trAge[trHead] >= 0.016) { trHead = (trHead + 1) % TR_N; trFill = Math.min(TR_N, trFill + 1); trAge[trHead] = t; }
+    for (let c = 0; c < TR_C; c++) {
+      const mw = FING[1].fingers[c].matrixWorld, o = (c * TR_N + trHead) * 6;
+      _trv.copy(TR_TIP[c]).applyMatrix4(mw).applyMatrix4(_rootInv);
+      trHist[o] = _trv.x; trHist[o + 1] = _trv.y; trHist[o + 2] = _trv.z;
+      _trv.copy(TR_BASE[c]).applyMatrix4(mw).applyMatrix4(_rootInv);
+      trHist[o + 3] = _trv.x; trHist[o + 4] = _trv.y; trHist[o + 5] = _trv.z;
+    }
+  }
+  if (trFill < 2) { trail.visible = false; return; }
+  for (let c = 0; c < TR_C; c++) {
+    for (let i = 0; i < TR_N; i++) {
+      const live = i < trFill, j = (trHead - (live ? i : trFill - 1) + TR_N) % TR_N;
+      const h = (c * TR_N + j) * 6, v = (c * TR_N + i) * 2;
+      const a = live ? Math.max(0, 1 - (t - trAge[j]) / 0.22) * (1 - i / TR_N) : 0;
+      trPos[v * 3] = trHist[h]; trPos[v * 3 + 1] = trHist[h + 1]; trPos[v * 3 + 2] = trHist[h + 2];
+      trPos[v * 3 + 3] = trHist[h + 3]; trPos[v * 3 + 4] = trHist[h + 4]; trPos[v * 3 + 5] = trHist[h + 5];
+      trA[v] = a; trA[v + 1] = a * 0.05; // tranchant lumineux à la pointe, fondu vers la base
+    }
+  }
+  trGeo.attributes.position.needsUpdate = true; trGeo.attributes.aA.needsUpdate = true;
+  trMat.uniforms.uColor.value.copy(TR_COL).lerp(blood, 0.08 + 0.8 * Hn).multiplyScalar(1.35);
+  trail.visible = true;
+}
+
 function update(state) {
   const t = state.t || 0, dt = clamp(state.dt || 0, 0, 0.05);
   const Hn = clamp(state.hunt || 0, 0, 1), H = clamp(state.howl || 0, 0, 1), S = clamp(state.sniff || 0, 0, 1);
   const F = clamp(state.flex || 0, 0, 1), G = clamp(state.growl || 0, 0, 1);
   const au = state.audio || ZERO_AUDIO, ptr = state.pointer || ZERO_PTR;
   const ts = state.swipe != null && state.swipe >= 0 ? state.swipe : -1;
-  const swA = ts < 0 ? 0 : env4(ts, 0, 0.24, 0.26, 0.45);
-  const swS = ts < 0 ? 0 : env4(ts, 0.26, 0.45, 0.47, 0.63);
-  const swF = ts < 0 ? 0 : env4(ts, 0.47, 0.63, 0.68, 0.995);
+  const swA = ts < 0 ? 0 : env4(ts, 0, 0.25, 0.29, 0.44);
+  const swS = ts < 0 ? 0 : env4(ts, 0.29, 0.44, 0.5, 0.64);
+  const swF = ts < 0 ? 0 : env4(ts, 0.46, 0.62, 0.68, 0.995);
   const swAny = Math.max(swA, swS, swF);
   if (t < st.lastT - 0.5 || t > st.lastT + 10) resetTimers(t);
   st.lastT = t;
@@ -1204,67 +1349,88 @@ function update(state) {
   const blink = 1 - env4(t - st.blinkT0, 0, 0.05, 0.1, 0.22) * 0.92;
 
   const ws = nz(t * 0.11, 1.3), yawN = nz(t * 0.07, 4.2);
-  /* --- bassin et colonne --- */
+  /* --- bassin et colonne ---
+   * hurlement : il se dresse sur ses pattes, bascule le buste en arrière (poitrail en avant) et pivote vers
+   * la gauche de l'écran pour présenter son profil, gueule au ciel, devant le puits de lumière.
+   * griffe : armé (torsion à droite, léger recul) → frappe (torsion à gauche, plongée) → accompagnement. */
   const pel = B.pelvis;
   pel.position.set(
-    P0.x + ws * 0.035 + swS * 0.03,
-    P0.y + br * 0.007 * bA - Hn * 0.13 + H * 0.035 + S * 0.015 - swA * 0.05 - swS * 0.04 - G * 0.03 - F * 0.02,
-    P0.z - H * 0.06 + Hn * 0.03 + swS * 0.05 + swF * 0.04);
-  pel.rotation.set(Hn * 0.1 - H * 0.08 - S * 0.02 + swA * 0.04 + swS * 0.08 + G * 0.04, yawN * 0.04 - swA * 0.07 + swS * 0.09 + swF * 0.07, -ws * 0.03);
-  B.spine1.rotation.set(Hn * 0.08 - H * 0.07 - S * 0.02 + swS * 0.06 + G * 0.04, -swA * 0.09 + swS * 0.13 + swF * 0.1, ws * 0.02);
-  B.spine2.rotation.set(Hn * 0.08 - H * 0.15 - S * 0.04 - br * 0.014 * bA - F * 0.06 + swS * 0.06, st.ly * 0.12 * lookW - swA * 0.13 + swS * 0.18 + swF * 0.14, ws * 0.025 + swA * 0.04);
-  B.ribs.scale.set(1 + br * 0.016 * bA + H * 0.03, 1 + br * 0.008 * bA, 1 + br * 0.024 * bA + H * 0.04);
+    P0.x + ws * 0.035 + swS * 0.04,
+    P0.y + br * 0.007 * bA - Hn * 0.13 + H * 0.085 + S * 0.02 - swA * 0.04 - swS * 0.06 - swF * 0.03 - G * 0.03 - F * 0.02,
+    P0.z - H * 0.05 + Hn * 0.03 - swA * 0.03 + swS * 0.07 + swF * 0.05);
+  pel.rotation.set(Hn * 0.1 - H * 0.1 - S * 0.03 - swA * 0.03 + swS * 0.1 + swF * 0.06 + G * 0.04,
+    yawN * 0.04 - H * 0.12 - swA * 0.06 + swS * 0.12 + swF * 0.1, -ws * 0.03 + swS * 0.03);
+  B.spine1.rotation.set(Hn * 0.08 - H * 0.1 - S * 0.03 - swA * 0.04 + swS * 0.08 + swF * 0.04 + G * 0.04,
+    -H * 0.15 - swA * 0.08 + swS * 0.17 + swF * 0.12, ws * 0.02);
+  B.spine2.rotation.set(Hn * 0.08 - H * 0.15 - S * 0.05 - br * 0.014 * bA - F * 0.06 - swA * 0.06 + swS * 0.1 + swF * 0.04,
+    st.ly * 0.12 * lookW - H * 0.15 - swA * 0.12 + swS * 0.24 + swF * 0.16, ws * 0.025 + swA * 0.06 - swS * 0.05);
+  B.ribs.scale.set(1 + br * 0.016 * bA + H * 0.05, 1 + br * 0.008 * bA + H * 0.02, 1 + br * 0.024 * bA + H * 0.07);
   /* --- cou, tête, mâchoire --- */
-  B.neck.rotation.set(Hn * 0.06 - H * 0.16 - S * 0.12 + G * 0.2 + st.lx * 0.4 * lookW + F * 0.08, st.ly * 0.38 * lookW + swS * 0.06, -ws * 0.02);
-  B.head.rotation.set(-Hn * 0.26 - H * 0.5 - S * 0.24 + G * 0.12 + st.lx * 0.6 * lookW - sniff * 0.035 + F * 0.12 + br * 0.008,
-    st.ly * 0.5 * lookW + swS * 0.1 + swF * 0.05, st.lz * lookW + nz(t * 0.13, 7) * 0.04 + G * 0.06 - ws * 0.02);
+  B.neck.rotation.set(Hn * 0.06 - H * 0.15 - S * 0.12 + G * 0.2 + st.lx * 0.4 * lookW + F * 0.08 + swA * 0.16 + swS * 0.08,
+    st.ly * 0.38 * lookW - H * 0.1 + swA * 0.14 - swS * 0.04, -ws * 0.02);
+  B.head.rotation.set(-Hn * 0.26 - H * 0.38 - S * 0.24 + G * 0.12 + st.lx * 0.6 * lookW - sniff * 0.035 + F * 0.12 + br * 0.008 - swA * 0.08 + swS * 0.06,
+    st.ly * 0.5 * lookW - H * 0.1 + swA * 0.08 + swS * 0.05 + swF * 0.05,
+    st.lz * lookW + nz(t * 0.13, 7) * 0.04 + G * 0.06 - ws * 0.02 + H * 0.06);
   const rumble = G * Math.sin(t * 61) * 0.012 + Hn * Math.sin(t * 47) * 0.004;
-  B.jaw.rotation.x = 0.03 + br * 0.015 * (0.5 + Hn) + Hn * 0.1 + H * (0.75 + 0.03 * Math.sin(t * 8.3)) + G * 0.3 + swS * 0.28 + swF * 0.12 + F * 0.08 + rumble - sniff * 0.02;
+  B.jaw.rotation.x = 0.03 + br * 0.015 * (0.5 + Hn) + Hn * 0.1 + H * (0.8 + 0.03 * Math.sin(t * 8.3)) + G * 0.3 + swA * 0.1 + swS * 0.3 + swF * 0.12 + F * 0.08 + rumble - sniff * 0.02;
   for (let e = 0; e < 2; e++) {
     const s = SIDES[e], E = st.ear[e], tw = env4(t - E.t0, 0, 0.05, 0.1, 0.38) * E.amp;
-    EARS[e].rotation.set(-0.12 * Hn - 0.5 * H - 0.55 * G + 0.18 * S - 0.45 * tw + nz(t * 0.21, 9 + e) * 0.05 - swS * 0.3, 0, s * (0.18 * tw + 0.1 * Hn + 0.2 * G + 0.1 * H));
+    EARS[e].rotation.set(-0.12 * Hn - 0.55 * H - 0.55 * G + 0.18 * S - 0.45 * tw + nz(t * 0.21, 9 + e) * 0.05 - swS * 0.3 - swA * 0.2, 0, s * (0.18 * tw + 0.1 * Hn + 0.2 * G + 0.12 * H));
   }
-  /* --- bras --- */
+  /* --- bras : hurlement = bras grands ouverts vers l'arrière, poignets cassés, griffes déployées --- */
   for (let i = 0; i < 2; i++) {
     const A = AR[i], s = A.s, sw = nz(t * 0.17, s * 3) * 0.03 + br * 0.012 * bA;
     const roll = F * Math.sin(t * 4.4 + s), roll2 = F * Math.cos(t * 4.4 + s);
-    A.clav.rotation.set(-roll * 0.1 + H * 0.1, -s * roll2 * 0.08 + s * H * 0.15, s * (br * 0.03 * bA + H * 0.16 + F * 0.05 + Hn * 0.05 + roll2 * 0.05));
-    A.arm.rotation.set(-Hn * 0.2 + H * 0.15 - F * 0.5 + sw, -s * H * 0.25, s * (H * 0.62 + Hn * 0.06 + F * 0.12));
-    A.fore.rotation.set(-Hn * 0.25 - H * 0.85 - F * 0.75 - br * 0.02, 0, 0);
-    A.hand.rotation.set(-Hn * 0.12 + H * 0.3 - F * 0.25, 0, 0);
+    A.clav.rotation.set(-roll * 0.1 + H * 0.06, -s * roll2 * 0.08 + s * H * 0.22, s * (br * 0.03 * bA + H * 0.2 + F * 0.05 + Hn * 0.05 + roll2 * 0.05));
+    // bras droit (côté caméra) ouvert vers l'avant-gauche de l'image, bras gauche rejeté en arrière : les deux restent lisibles
+    A.arm.rotation.set(-Hn * 0.2 + H * (s > 0 ? 0.15 : -0.1) - F * 0.5 + sw, s * H * (s > 0 ? 0.42 : -0.05), s * (H * (s > 0 ? 0.78 : 0.95) + Hn * 0.06 + F * 0.12));
+    A.fore.rotation.set(-Hn * 0.25 - H * 0.3 - F * 0.75 - br * 0.02, 0, 0);
+    A.hand.rotation.set(-Hn * 0.12 + H * 0.4 - F * 0.25, 0, s * H * 0.2);
   }
-  { // coup de griffe (bras droit) : armé → frappe → accompagnement → retour
+  { // coup de griffe : épaule droite qui recule puis jaillit, bras gauche en contrepoids
     const A = AR[1];
-    A.clav.rotation.x += swA * 0.2 - swS * 0.15; A.clav.rotation.z += -swA * 0.25;
-    A.arm.rotation.x += swA * 0.05 - swS * 1.1 - swF * 0.7;
-    A.arm.rotation.y += -swA * 0.55 + swS * 0.2 + swF * 0.4;
-    A.arm.rotation.z += -swA * 1.95 + swS * 0.2 + swF * 0.55;
-    A.fore.rotation.x += -swA * 1.6 - swS * 0.1 - swF * 0.25;
-    A.hand.rotation.x += swA * 0.4 - swS * 0.25 - swF * 0.1;
-    AR[0].arm.rotation.x += swA * 0.15 + swS * 0.25; AR[0].arm.rotation.z += swS * 0.15;
+    A.clav.rotation.x += swA * 0.15 - swS * 0.2;
+    A.clav.rotation.y += -swA * 0.15 + swS * 0.25 + swF * 0.1;
+    A.clav.rotation.z += -swA * 0.3 + swS * 0.05;
+    A.hand.rotation.x += swA * 0.55 - swS * 0.35 - swF * 0.15;
+    AR[0].arm.rotation.x += swA * 0.2 + swS * 0.3; AR[0].arm.rotation.z += swA * 0.1 + swS * 0.2;
+    AR[0].fore.rotation.x += -swA * 0.3 - swS * 0.2;
+  }
+  // bras droit : IK sur la trajectoire de frappe, mêlée à la pose d'attente
+  if (ts >= 0) {
+    const wIK = ss(0, 0.2, ts) * (1 - ss(0.66, 0.98, ts));
+    if (wIK > 0.001) {
+      const p = clamp((ts - 0.27) / (0.62 - 0.27), 0, 1);
+      swPath((SWK.length - 1) * p * p * (3 - 2 * p), _swP, _swPole);
+      const coil = env4(ts, 0.1, 0.25, 0.27, 0.33); // il ramène encore la patte juste avant de lâcher le coup
+      _swP.x -= coil * 0.06; _swP.y += coil * 0.05; _swP.z -= coil * 0.12;
+      solveArmIK(_swP, _swPole);
+      AR[1].arm.quaternion.slerp(_qIKa, wIK);
+      AR[1].fore.quaternion.slerp(_qIKf, wIK);
+    }
   }
   /* --- doigts --- */
   for (let i = 0; i < 2; i++) {
     const Fh = FING[i];
     for (let f = 0; f < 4; f++) {
-      let c = 0.12 + nz(t * 0.23, f * 1.7 + i * 5) * 0.07 + Hn * 0.18 - H * 0.35;
+      let c = 0.12 + nz(t * 0.23, f * 1.7 + i * 5) * 0.07 + Hn * 0.18 - H * 0.5;
       c += F * (0.75 * (0.5 + 0.5 * Math.sin(t * 7.2 - f * 0.55 + i)) - 0.35);
-      if (i === 1) c += swA * 0.5 - swS * 0.45 - swF * 0.2;
+      if (i === 1) c += swA * 0.3 - swS * 0.5 - swF * 0.15;
       Fh.fingers[f].quaternion.setFromAxisAngle(Fh.axis, c);
     }
-    Fh.thumb.quaternion.setFromAxisAngle(Fh.taxis, 0.1 + F * 0.3 * Math.sin(t * 7.2 + i) + Hn * 0.1);
+    Fh.thumb.quaternion.setFromAxisAngle(Fh.taxis, 0.1 + F * 0.3 * Math.sin(t * 7.2 + i) + Hn * 0.1 - H * 0.2);
   }
   /* --- jambes (pieds plantés) --- */
   pel.updateMatrix();
   _qP.copy(pel.quaternion);
-  const tilt = -H * 0.32 + Hn * 0.18 + swA * 0.06;
+  const tilt = -H * 0.36 + Hn * 0.18 + swA * 0.04 + swS * 0.06;
   solveLeg(LEGS[0], tilt); solveLeg(LEGS[1], tilt);
-  /* --- queue (onde qui se propage le long de la chaîne) --- */
+  /* --- queue (onde qui se propage le long de la chaîne ; dressée pendant le hurlement) --- */
   st.tp = (st.tp + dt * (1.0 + Hn * 0.6 + H * 0.4)) % (Math.PI * 200);
   for (let i = 0; i < TAIL_N; i++) {
     const amp = (0.035 + i * 0.012) * (1 - Hn * 0.35) * (1 + swAny * 0.6);
-    const lift = i === 0 ? H * 0.55 + Hn * 0.12 + G * 0.1 + swS * 0.1 : (H * 0.04 - Hn * 0.015 + G * 0.03);
-    TAIL[i].rotation.set(lift + 0.03 * Math.sin(st.tp * 0.63 - i * 0.45), amp * Math.sin(st.tp - i * 0.55) + (i === 0 ? -ws * 0.12 - swS * 0.2 : 0), 0);
+    const lift = i === 0 ? H * 0.7 + Hn * 0.12 + G * 0.1 + swS * 0.12 : (H * 0.07 - Hn * 0.015 + G * 0.03);
+    TAIL[i].rotation.set(lift + 0.03 * Math.sin(st.tp * 0.63 - i * 0.45), amp * Math.sin(st.tp - i * 0.55) + (i === 0 ? -ws * 0.12 - swS * 0.2 + swA * 0.1 : 0), 0);
   }
   /* --- chimie, yeux, fourrure --- */
   const pal = state.palette;
@@ -1277,11 +1443,13 @@ function update(state) {
   glassMat.emissive.copy(_chem).multiplyScalar(0.06 * tankI);
   bubMat.color.copy(_chem).lerp(_tmpC.setRGB(1, 1, 1), 0.55).multiplyScalar(1.3 + au.beat * 0.6);
   const blood = pal && pal.blood ? pal.blood : _tmpC.setRGB(1, 0.17, 0.17);
-  const eyeI = (2.4 + Hn * 3 + H * 2 + G * 2 + swS * 2 + au.beat * 1.5 + Math.sin(t * 2.1) * 0.2) * blink;
-  U.uBlood.value.copy(blood).multiplyScalar(eyeI);
-  eyeMat.color.copy(blood).multiplyScalar((0.9 + Hn * 0.7 + H * 0.4 + au.beat * 0.3) * blink);
-  const es = (0.24 + Hn * 0.14 + H * 0.06 + G * 0.05 + au.beat * 0.04) * (0.3 + 0.7 * blink);
-  eyeGlows[0].scale.setScalar(es); eyeGlows[1].scale.setScalar(es);
+  // yeux : rouges même au plus fort (pas de blanc cramé), > 1 pour le bloom ; pulsation lente + battement
+  const eyeP = 0.5 + 0.5 * Math.sin(t * 1.7 + Math.sin(t * 0.37) * 1.5);
+  const eyeI = (1.9 + eyeP * 0.35 + Hn * 1.6 + H * 1.2 + G * 1.2 + swS * 1.2 + au.beat * 0.8) * blink;
+  U.uBlood.value.copy(blood).multiply(blood).multiplyScalar(eyeI); // teinte saturée (rouge, pas rose)
+  eyeMat.color.copy(blood).multiplyScalar((1.0 + eyeP * 0.2 + Hn * 0.6 + H * 0.4 + G * 0.3 + au.beat * 0.3) * blink);
+  const es = (1 + eyeP * 0.08 + Hn * 0.45 + H * 0.2 + G * 0.25 + au.beat * 0.12) * (0.25 + 0.75 * blink);
+  eyeGlows[0].scale.set(0.3 * es, 0.15 * es * (0.35 + 0.65 * blink), 1); eyeGlows[1].scale.copy(eyeGlows[0].scale);
   U.uRim.value.copy(RIM).multiplyScalar(0.22).lerp(_tmpC.copy(blood).multiplyScalar(0.3), Hn);
   U.uBristle.value = clamp(Hn * 0.55 + H * 0.7 + G * 0.8 + swS * 0.4, 0, 1);
   U.uRipple.value = 0.05 + Hn * 0.03;
@@ -1322,6 +1490,8 @@ function update(state) {
     _o3.updateMatrix(); bubbles.setMatrixAt(i, _o3.matrix);
   }
   bubbles.instanceMatrix.needsUpdate = true;
+  /* --- traînée des griffes --- */
+  updateTrail(ts, t, Hn, blood);
 }
 
 const headLocal = v3(0, -0.04, 0.5);

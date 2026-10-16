@@ -19,8 +19,11 @@ let quality = opts.quality || { name: 'high', particles: 1, shadows: true };
 /* ======================================================================
    Repères de mise en scène
    ====================================================================== */
-// Caméra de référence (mêmes constantes que main.js) : sert à garder le coin des icônes calme.
+// Caméra de référence figée : elle pilote le placement procédural (ne pas la modifier, sinon tout le tirage aléatoire
+// du canyon change). VIEW = cadrage réel de main.js (CAM_POS, CAM_TARGET, fov, lensShift à 21:9) : sert à assombrir
+// le coin des icônes (haut-gauche) sans toucher au tirage.
 const REF = { pos: V3(1.25, 0.7, 7.25), target: V3(0, 1.5, 0), fov: 31, aspect: 2.389, shift: 0.29 };
+const VIEW = { pos: V3(1.25, 0.7, 7.25), target: V3(0, 1.5, 0), fov: 29.5, aspect: 2.389, shift: 0.273 };
 // Axe du canyon : part de la jonction derrière Warwick et s'enfonce vers la gauche de l'image.
 const CA = 0.58;
 const CU = V3(-Math.sin(CA), 0, -Math.cos(CA));   // vers le fond du canyon
@@ -31,22 +34,32 @@ const cw = (l, y, s) => V3(M0.x + CU.x * s + CV.x * l, y, M0.z + CU.z * s + CV.z
 const LDIR = V3(-0.55, 1.0, -0.75).normalize();
 const KEY_TARGET = V3(0.2, 1.0, 0.4);
 
-const refCam = new THREE.PerspectiveCamera(REF.fov, REF.aspect, 0.1, 400);
-refCam.position.copy(REF.pos); refCam.lookAt(REF.target); refCam.updateMatrixWorld(true); refCam.updateProjectionMatrix();
-refCam.projectionMatrix.elements[8] -= REF.shift;
+function makeCam(R) {
+  const c = new THREE.PerspectiveCamera(R.fov, R.aspect, 0.1, 400);
+  c.position.copy(R.pos); c.lookAt(R.target); c.updateMatrixWorld(true); c.updateProjectionMatrix();
+  c.projectionMatrix.elements[8] -= R.shift;
+  return c;
+}
+const refCam = makeCam(REF), viewCam = makeCam(VIEW);
 const _sp = new THREE.Vector3(), SCR = { x: 0, y: 0 };
-function screenOf(p) {
-  _sp.copy(p).applyMatrix4(refCam.matrixWorldInverse);
+function screenOf(p, cam) {
+  cam = cam || refCam;
+  _sp.copy(p).applyMatrix4(cam.matrixWorldInverse);
   if (_sp.z > -0.2) return null;
-  _sp.applyMatrix4(refCam.projectionMatrix);
+  _sp.applyMatrix4(cam.projectionMatrix);
   SCR.x = _sp.x * 0.5 + 0.5; SCR.y = _sp.y * 0.5 + 0.5;
   return SCR;
 }
-// 1 = en plein dans la zone des icônes (haut-gauche), 0 = ailleurs.
+// 1 = en plein dans la zone des icônes (haut-gauche), 0 = ailleurs. (Version figée : pilote le tirage.)
 function calmness(p) {
   const s = screenOf(p);
   if (!s) return 0;
   return (1 - smooth(0.16, 0.34, s.x)) * smooth(0.3, 0.52, s.y);
+}
+// Même idée dans le cadrage réel, zone un peu plus large (marge pour la dérive de caméra et la parallaxe).
+function calmView(p) {
+  const s = screenOf(p, viewCam);
+  return s ? (1 - smooth(0.2, 0.38, s.x)) * smooth(0.26, 0.5, s.y) : 0;
 }
 
 /* ======================================================================
@@ -382,8 +395,8 @@ void main(){ gl_FragColor = vec4(mix(vC, uFogColor, vF), 1.0);${OUT}
    Lots
    ====================================================================== */
 const _cv = new THREE.Vector3();
-const calmDark = (k) => (x, y, z) => 1 - k * calmness(_cv.set(x, y, z));
-const B = { metal: new Batch(false, calmDark(0.75)), back: new Batch(), near: new Batch(), wall: new Batch(false, calmDark(0.6)), glow: new Batch(true, calmDark(0.95)) };
+const calmDark = (k) => (x, y, z) => { _cv.set(x, y, z); return 1 - k * Math.max(calmness(_cv), calmView(_cv)); };
+const B = { metal: new Batch(false, calmDark(0.85)), back: new Batch(), near: new Batch(), wall: new Batch(false, calmDark(0.75)), glow: new Batch(true, calmDark(0.95)) };
 // Couleurs (linéaires) — sombres : la lumière fait le travail
 const C = {
   steel: lin(0.15, 0.16, 0.17), steelDark: lin(0.075, 0.08, 0.085), rustM: lin(0.2, 0.11, 0.07), brass: lin(0.36, 0.24, 0.11),
@@ -437,7 +450,15 @@ const floor = new THREE.Mesh(deckGeo, floorMat);
 floor.receiveShadow = true; floor.matrixAutoUpdate = false; scene.add(floor);
 
 // Grilles : fosses lumineuses sous des caillebotis
-const grateMat = new THREE.MeshStandardMaterial({ color: 0x3a4044, metalness: 0.6, roughness: 0.45, alphaMap: grateTex, alphaTest: 0.5, side: THREE.DoubleSide, envMap: envCube, envMapIntensity: 1.0 });
+// Caillebotis : barreaux sombres sur la fosse lumineuse. Même « cookie » que le sol pour la clé froide
+// (sinon les barreaux fins virent au blanc pur et scintillent / frangent au post-traitement).
+const grateMat = new THREE.MeshStandardMaterial({ color: 0x22282b, metalness: 0.5, roughness: 0.55, alphaMap: grateTex, alphaTest: 0.5, side: THREE.DoubleSide, envMap: envCube, envMapIntensity: 0.7 });
+grateMat.onBeforeCompile = sh => {
+  keyUniforms(sh);
+  sh.vertexShader = 'varying vec3 vWPos;\n' + sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n\tvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  sh.fragmentShader = 'varying vec3 vWPos;\n' + KEYMASK + sh.fragmentShader.replace('#include <lights_fragment_begin>', keyedStdLights());
+};
+grateMat.customProgramCacheKey = () => 'zaun-grate';
 {
   const P = [], N = [], UV = [];
   for (const g of GRATES) {
@@ -449,7 +470,7 @@ const grateMat = new THREE.MeshStandardMaterial({ color: 0x3a4044, metalness: 0.
     for (const [px, pz, sx, sz] of [[g.x, z0, g.w, 0.04], [g.x, z1, g.w, 0.04], [x0, g.z, 0.04, g.d], [x1, g.z, 0.04, g.d]]) {
       B.near.add(G.box, M(px, -depth / 2, pz, 0, 0, 0, sx, depth, sz), C.steelDark);
     }
-    B.glow.add(G.plane, M(g.x, -depth + 0.02, g.z, -PI / 2, 0, 0, g.w, g.d, 1), lin(1.3, 1.3, 1.3), FX_CHEM);
+    B.glow.add(G.plane, M(g.x, -depth + 0.02, g.z, -PI / 2, 0, 0, g.w, g.d, 1), lin(0.95, 0.95, 0.95), FX_CHEM);
     // cadre de la grille
     for (const [px, pz, sx, sz] of [[g.x, z0, g.w + 0.12, 0.08], [g.x, z1, g.w + 0.12, 0.08], [x0, g.z, 0.08, g.d], [x1, g.z, 0.08, g.d]]) {
       B.near.add(G.box, M(px, -0.015, pz, 0, 0, 0, sx, 0.05, sz), C.steel);
@@ -567,9 +588,11 @@ halo(V3(-3.95, 2.52, -1.0), lin(1, 0.55, 0.22), 1.6, 0, 0.6);
   }
   for (let y = 7; y < 24; y += 3.3) B.wall.add(G.box, M(8.3, y, z + 0.12, 0, 0, 0, 15.4, 0.2, 0.3), C.walls[4]);
   // lampe-cage murale + évent qui crache de la vapeur
-  B.back.add(G.box, M(2.3, 3.75, z + 0.15, 0, 0, 0, 0.3, 0.3, 0.2), C.steelDark);
-  B.glow.add(G.ico, M(2.3, 3.55, z + 0.28, 0, 0, 0, 0.09, 0.09, 0.09), lin(4, 2.2, 0.9), FX_WARM);
-  halo(V3(2.3, 3.55, z + 0.35), lin(1, 0.6, 0.25), 1.3, 0, 0.6);
+  // (sous le linteau du rideau, devant lui : sinon l'ampoule est cachée et il ne reste qu'un halo sans source)
+  B.back.add(G.box, M(2.3, 3.14, z + 0.5, 0, 0, 0, 0.3, 0.12, 0.3), C.steelDark);
+  B.back.add(G.cone8, M(2.3, 3.0, z + 0.55, 0, 0, 0, 0.17, 0.14, 0.17), C.steelDark);
+  B.glow.add(G.ico, M(2.3, 2.9, z + 0.55, 0, 0, 0, 0.08, 0.08, 0.08), lin(4, 2.2, 0.9), FX_WARM);
+  halo(V3(2.3, 2.88, z + 0.6), lin(1, 0.6, 0.25), 1.1, 0, 0.6);
   B.back.add(G.cyl12, M(6.4, 5.2, z + 0.35, PI / 2, 0, 0, 0.3, 0.7, 0.3), C.steelDark);
   vents.push({ p: V3(6.4, 5.2, z + 0.75), dir: V3(-0.25, 0.7, 0.6), len: 3.2, size: 1.6, n: 40, rate: 0.16, col: 'cold', k: 0.06, spread: 0.7 });
 
@@ -585,8 +608,9 @@ halo(V3(-3.95, 2.52, -1.0), lin(1, 0.55, 0.22), 1.6, 0, 0.6);
   // hublots verticaux de liquide lumineux, tournés vers la caméra
   for (const an of [1.85, 2.25, 2.65]) {
     const px = vx + Math.cos(an) * (vr + 0.01), pz = vz + Math.sin(an) * (vr + 0.01);
-    B.glow.add(G.box, M(px, 1.85, pz, 0, -an + PI / 2, 0, 0.16, 1.9, 0.04), lin(0.4, 0.4, 0.4), [1, 0, 1, 0]);
+    B.glow.add(G.box, M(px, 1.85, pz, 0, -an + PI / 2, 0, 0.16, 1.9, 0.04), lin(0.26, 0.26, 0.26), [1, 0, 1, 0]);
     B.back.add(G.box, M(px, 1.85, pz, 0, -an + PI / 2, 0, 0.26, 2.05, 0.03), C.steelDark);
+    for (let y = 1.06; y < 2.7; y += 0.32) B.back.add(G.box, M(px, y, pz, 0, -an + PI / 2, 0, 0.22, 0.045, 0.075), C.steelDark);
   }
   halo(V3(vx - 0.9, 1.9, vz + 1.15), lin(0.5, 1, 0.4), 2.6, 1);
   seg(B.back, G.cyl12, V3(vx - 0.5, vh + 0.8, vz), V3(vx - 0.5, vh + 2.3, vz), 0.18, C.pipe);
@@ -851,6 +875,17 @@ catenary(B.metal, V3(-1.2, 7.4, -9.5), V3(4.5, 7.8, -7.5), 1.6, 0.03, C.black);
 seg(B.near, G.cyl12, V3(2.05, -1, 3.65), V3(2.05, 12, 3.65), 0.19, C.steelDark);
 seg(B.near, G.cyl8, V3(2.36, -1, 3.5), V3(2.36, 12, 3.5), 0.065, C.brass);
 for (const y of [0.6, 2.4, 4.2]) B.near.add(G.cyl12, M(2.05, y, 3.65, 0, 0, 0, 0.25, 0.1, 0.25), C.black);
+// colonne sombre au bord gauche (silhouette de premier plan sous les icônes : Lambert assombri par la zone calme)
+{
+  const x = -3.45, z = 3.1, fade = (px, py) => 1 - 0.85 * smooth(1.2, 3.6, py);
+  seg(B.metal, G.cyl12, V3(x, -1, z), V3(x, 16, z), 0.26, C.black, null, fade);
+  seg(B.metal, G.cyl8, V3(x + 0.42, -1, z - 0.12), V3(x + 0.42, 16, z - 0.12), 0.08, lin(0.05, 0.04, 0.03), null, fade);
+  for (const y of [0.15, 2.9, 5.6, 8.3]) {
+    B.metal.add(G.cyl12, M(x, y, z, 0, 0, 0, 0.32, 0.16, 0.32), C.steelDark, null, fade);
+    B.metal.add(G.box, M(x + 0.24, y + 0.02, z - 0.06, 0, 0.28, 0, 0.42, 0.07, 0.07), C.black, null, fade);
+  }
+  B.metal.add(G.box, M(x, 0.04, z, 0, 0.3, 0, 0.8, 0.08, 0.8), C.steelDark);
+}
 // grosse conduite au ras du sol, le long du bord gauche
 seg(B.near, G.cyl16, V3(-5.15, 0.3, 14), V3(-5.15, 0.3, -3.6), 0.42, lin(0.035, 0.04, 0.04));
 for (let z = 12; z > -3; z -= 2.6) B.near.add(G.cyl16, M(-5.15, 0.3, z, PI / 2, 0, 0, 0.46, 0.14, 0.46), C.steelDark);
@@ -860,7 +895,7 @@ function chain(x, y, z, len, phase) {
   const b = new Batch(), n = Math.round(len / 0.13);
   for (let i = 0; i < n; i++) b.add(G.link, M(0, -i * 0.13, 0, PI / 2, i % 2 ? PI / 2 : 0, 0, 0.085, 0.085, 0.085), C.black);
   b.add(G.cone8, M(0, -n * 0.13 - 0.12, 0, PI, 0, 0, 0.09, 0.22, 0.09), C.rustM);
-  const mesh = b.build(matBack, 'chaine');
+  const mesh = b.build(matMetal, 'chaine');
   mesh.matrixAutoUpdate = true; mesh.position.set(x, y, z);
   chains.push({ mesh, phase });
 }
@@ -959,7 +994,7 @@ const streakGeo = new THREE.BufferGeometry();
   }
   streak(V3(KEY_FOOT.x - 0.4, 3.5, KEY_FOOT.z - 0.5), lin(0.7, 0.82, 1), 0.7, 4.5, 0.4);
   streak(LAMP, lin(1, 0.55, 0.22), 0.3, 3.2, 0.9);
-  streak(V3(2.3, 3.55, -8.3), lin(1, 0.6, 0.25), 0.25, 3, 0.5);
+  streak(V3(2.3, 2.9, -8.05), lin(1, 0.6, 0.25), 0.25, 3, 0.5);
   streak(V3(3.4, 1.9, -5.0), lin(0.5, 1, 0.4), 0.55, 3.5, 0.55);
   streak(V3(3.95, 4.7, -5.9), lin(1, 0.12, 0.1), 0.3, 3.2, 0.6);
   streak(V3(-1.15, 0.25, 2.75), lin(0.5, 1, 0.4), 0.9, 1.6, 0.35);
@@ -980,7 +1015,7 @@ void main(){
   float along = smoothstep(0.0, 0.1, vUv.y) * pow(1.0 - vUv.y, 1.6);
   float wet = 0.25 + 0.75 * puddle(vW.xz);
   float rip = 0.65 + 0.35 * nzB(vec2(vUv.x * 0.2, vUv.y * 1.25 - uTime * 0.02));
-  float a = pow(across, 2.5) * along * wet * rip * (1.0 - vF);
+  float a = 1.4 * pow(across, 2.5) * along * wet * rip * (1.0 - vF);
   gl_FragColor = vec4(vC * a, 1.0);${OUT}
 }`,
 });
@@ -1191,8 +1226,8 @@ void main(){
   PS.embers.userData.n = N;
   const N2 = 900, P2 = [], S2 = [];
   for (let i = 0; i < N2; i++) {
-    const p = chance(0.6) ? V3(rr(-6, 5), rr(4.5, 9), rr(-9, 3)) : cw(rr(-7, 6), rr(5, 12), rr(0, 22));
-    P2.push(p.x, p.y, p.z); S2.push(rnd(), rr(0.6, 1.4), rnd(), rr(0.012, 0.035));
+    const r = rnd(), p = r < 0.25 ? V3(rr(-2.5, 3), rr(3.6, 6), rr(-1, 4)) : r < 0.7 ? V3(rr(-6, 5), rr(4.5, 9), rr(-9, 3)) : cw(rr(-7, 6), rr(5, 12), rr(0, 22));
+    P2.push(p.x, p.y, p.z); S2.push(rnd(), rr(0.6, 1.4), rnd(), rr(0.016, 0.045));
   }
   PS.dust = points(P2, { aSeed: { a: S2, n: 4 } }, ptVS(`attribute vec4 aSeed; uniform float uDustT; uniform vec3 uShaftCol;
 void main(){
@@ -1202,7 +1237,7 @@ void main(){
   p.x += sin(tt * 2.0 + aSeed.z * 20.0) * 0.15;
   vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
   vA = step(0.0, tt) * smoothstep(0.0, 0.3, tt) * (1.0 - smoothstep(2.4, 4.2, tt)) * step(-0.5, p.y) * (1.0 - fogF(-mv.z));
-  vC = vec3(0.55, 0.6, 0.62) + uShaftCol * 0.3;
+  vC = vec3(0.7, 0.74, 0.76) + uShaftCol * 0.45;
   gl_PointSize = max(1.0, pxSize(aSeed.w, -mv.z));
 }`), ptFS(SOFT));
   PS.dust.userData.n = N2;
@@ -1226,8 +1261,11 @@ keyLight.shadow.mapSize.set(quality.shadowMap || 2048, quality.shadowMap || 2048
 scene.add(keyLight); scene.add(keyLight.target);
 // Remplissage chimique : la grille lumineuse devant lui (par en dessous, à gauche)
 const chemFill = new THREE.PointLight(0x7cff4f, 1.1, 6.5, 2); chemFill.position.set(-1.15, 0.22, 2.75); scene.add(chemFill);
-// Accent rouge : liseré sur l'autre flanc (gyrophare de la cuve)
-const redRim = new THREE.PointLight(0xff2a30, 3.0, 6, 2); redRim.position.set(2.1, 2.5, -1.3); scene.add(redRim);
+// Accent rouge : liseré sur l'autre flanc (côté du gyrophare de la cuve). Projecteur serré sur Warwick :
+// un point lumineux noyait les fûts et la cuve de rouge saturé.
+const redRim = new THREE.SpotLight(0xff2a30, 4.0, 9, 0.42, 0.75, 2);
+redRim.position.set(2.5, 3.0, -2.5); redRim.target.position.set(0.05, 1.55, 0.1);
+scene.add(redRim); scene.add(redRim.target);
 // Lampe pratique chaude (lampadaire de gauche) : réchauffe le museau
 const warmLamp = new THREE.PointLight(0xffa04a, 1.6, 9, 2); warmLamp.position.copy(LAMP).add(V3(0.1, -0.15, 0)); scene.add(warmLamp);
 // Lueur de l'abîme : éclaire les façades du canyon par en dessous
@@ -1249,7 +1287,7 @@ function drawRange(m, dens, k) { m.geometry.setDrawRange(0, Math.floor(m.userDat
 
 function update(state, camera) {
   const t = state.t, h = state.hunt, au = state.audio || {}, bass = au.bass || 0, high = au.high || 0;
-  U.uTime.value = t;
+  U.uTime.value = t % 8192;   // float32 côté GPU : on reste précis même après des heures (un seul saut toutes les ~2 h 16)
   chemNow.copy(state.palette.chem).lerp(state.palette.blood, h);
   U.uChem.value.copy(chemNow); U.uBlood.value.copy(state.palette.blood);
   U.uHunt.value = h; U.uHowl.value = state.howl; U.uBass.value = bass; U.uHigh.value = high;
@@ -1282,7 +1320,7 @@ function update(state, camera) {
   abyssLight.color.copy(chemNow); abyssLight.intensity = (3.0 + bass * 2) * (1 - h * 0.2);
   const beacon = 0.5 + 0.5 * Math.sin(t * (1.6 + h * 3.0));
   redRim.color.copy(state.palette.blood);
-  redRim.intensity = (2.4 + beacon * 1.2) * (1 + h * 1.3) + state.howl * 1.5 + (state.growl || 0) * 2;
+  redRim.intensity = (3.2 + beacon * 1.4) * (1 + h * 1.2) + state.howl * 2.0 + (state.growl || 0) * 2.5;
   warmLamp.color.copy(WARM).lerp(state.palette.blood, h * 0.6);
   warmLamp.intensity = 1.6 * (1 - h * 0.45) * fl * (Math.sin(t * 0.37) * Math.sin(t * 5.1) > 0.92 ? 0.55 : 1);
   hemi.color.copy(HEMI_SKY_Z).lerp(HEMI_SKY_H, h); hemi.groundColor.copy(chemNow).multiplyScalar(0.06);
@@ -1300,6 +1338,7 @@ function update(state, camera) {
   if (state.howl > 0.2 && lastHowl <= 0.2) howlStart = t;
   lastHowl = state.howl;
   U.uDustT.value = Math.min(99, t - howlStart);
+  PS.dust.visible = U.uDustT.value < 6;   // hors hurlement : rien à dessiner
   // Particules : densité et taille en pixels
   const dens = Math.max(0, Math.min(1.5, state.particles == null ? 1 : state.particles));
   drawRange(PS.spores, dens, 1); drawRange(PS.drips, dens, 1.2); drawRange(PS.dust, dens, 1);

@@ -107,7 +107,7 @@ function frame() {
   const aspect = W / H;
   camera.aspect = aspect;
   // Écran étroit (aperçu, portrait) : on élargit le champ pour garder Warwick entier.
-  camera.fov = aspect >= 1.6 ? 31 : aspect >= 1.1 ? 37 : 50;
+  camera.fov = aspect >= 1.6 ? 29.5 + THREE.MathUtils.clamp((2.3 - aspect) * 3.5, 0, 3) : aspect >= 1.1 ? 37 : 50;
   // Décentrement : Warwick vers ~64 % de la largeur en 21:9, recentré quand l'écran s'étroitise.
   lensShift = THREE.MathUtils.clamp((aspect - 1.25) * 0.24, 0, 0.29);
   camera.updateProjectionMatrix();
