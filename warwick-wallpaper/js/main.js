@@ -100,14 +100,14 @@ const post = safe('createPost', () => WW.createPost(THREE, renderer, scene, came
 }));
 
 /* ---------- Cadrage 21:9 ---------- */
-const CAM_POS = new THREE.Vector3(1.7, 1.1, 8.6);
-const CAM_TARGET = new THREE.Vector3(0, 1.55, 0);
+const CAM_POS = new THREE.Vector3(1.25, 0.7, 7.25);
+const CAM_TARGET = new THREE.Vector3(0, 1.5, 0);
 let lensShift = 0, W = 0, H = 0;
 function frame() {
   const aspect = W / H;
   camera.aspect = aspect;
   // Écran étroit (aperçu, portrait) : on élargit le champ pour garder Warwick entier.
-  camera.fov = aspect >= 1.6 ? 28 : aspect >= 1.1 ? 34 : 50;
+  camera.fov = aspect >= 1.6 ? 31 : aspect >= 1.1 ? 37 : 50;
   // Décentrement : Warwick vers ~64 % de la largeur en 21:9, recentré quand l'écran s'étroitise.
   lensShift = THREE.MathUtils.clamp((aspect - 1.25) * 0.24, 0, 0.29);
   camera.updateProjectionMatrix();
