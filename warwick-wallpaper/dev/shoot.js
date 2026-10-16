@@ -15,7 +15,7 @@ const url = 'file://' + path.resolve(__dirname, '..', 'index.html') + '?dev' + (
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
   await page.goto(url);
   await page.waitForFunction(() => window.__ww && window.__ww.state.t > 0.5, null, { timeout: 60000 });
-  const snap = async name => { const f = path.join(out, name + '.png'); await page.screenshot({ path: f }); console.log('shot', f); };
+  const snap = async name => { const f = path.join(out, name + '.png'); await page.screenshot({ path: f, timeout: 300000 }); console.log('shot', f); };
   for (const s of states) {
     if (s === 'idle') { await page.waitForTimeout(800); await snap('idle'); }
     else if (s === 'howl') { await page.evaluate(() => __ww.trigger('howl')); await page.waitForFunction(() => __ww.state.howl > 0.95, null, { timeout: 60000 }); await snap('howl'); await page.waitForFunction(() => __ww.state.howl < 0.01 && __ww.state.sniff < 0.01, null, { timeout: 90000 }); }
