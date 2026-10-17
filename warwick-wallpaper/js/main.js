@@ -92,6 +92,11 @@ const wolf = safe('createWarwick', () => WW.createWarwick(THREE, opts), () => {
   return { root, update() {}, getHeadWorldPosition: v => v.set(0, 2.4, 0.5) };
 });
 wolf.root.rotation.y = -0.45;
+
+const briar = safe('createBriar', () => WW.createBriar(THREE, opts), () => ({ root: new THREE.Group(), update() {} }));
+if (env.briarAnchor) { briar.root.position.copy(env.briarAnchor.position); briar.root.rotation.y = env.briarAnchor.rotationY; }
+else { briar.root.position.set(-7.6, 0, -10.6); briar.root.rotation.y = 0.9; }
+scene.add(briar.root);
 scene.add(wolf.root);
 
 const post = safe('createPost', () => WW.createPost(THREE, renderer, scene, camera, opts), () => ({
@@ -239,6 +244,7 @@ function loop(now) {
   try { wolf.update(state); } catch (e) { reportOnce('warwick', e); }
   try { wolf.root.updateMatrixWorld(); wolf.getHeadWorldPosition(state.headPos); } catch (e) { reportOnce('head', e); }
   try { env.update(state, camera); } catch (e) { reportOnce('environment', e); }
+  try { briar.update(state); } catch (e) { reportOnce('briar', e); }
   try { post.render(state); } catch (e) { reportOnce('post', e); renderer.render(scene, camera); }
 }
 const reported = {};

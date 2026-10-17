@@ -1359,6 +1359,8 @@ function setQuality(q) {
 }
 setQuality(quality);
 
-return { update, keyLight, setQuality };
+// Point d'ancrage pour Briar : sur la passerelle, au fond de la ruelle, tournée vers Warwick
+const briarAnchor = { position: V3(-0.35, 0, -8.5).applyMatrix4(FC), rotationY: CA + 0.35 };
+return { update, keyLight, setQuality, briarAnchor };
 };
 })();
