@@ -1515,6 +1515,7 @@ const arnd = () => ((aseed = (aseed * 16807) % 2147483647) / 2147483647);
 const st = {
   bp: 0, tp: 0, lx: 0, ly: 0, lz: 0, vx: 0, vy: 0, vz: 0, tx: 0, ty: 0, tz: 0, fx: 0, fy: 0, fz: 0, lookNext: 1.5, lastT: -1,
   ear: [{ t0: -9, next: 3.2, amp: 1 }, { t0: -9, next: 5.1, amp: 1 }], sniffT0: -9, sniffNext: 8, blinkT0: -9, blinkNext: 3.5,
+  ay: 0, ap: 0, dOn: false, // visée du face-à-face (lacet, tangage filtrés, repère de Warwick)
 };
 function resetTimers(t) {
   st.lookNext = t + 1; st.ear[0].next = t + 2 + arnd() * 4; st.ear[1].next = t + 3 + arnd() * 5;
@@ -1627,6 +1628,42 @@ function solveArmIK(wristBind, poleBind) {
 }
 const _swP = new V3(), _swPole = new V3(), _XAX = v3(1, 0, 0);
 
+/* ---------- Face-à-face avec Briar : il la toise par-dessus l'épaule droite ----------
+ * Briar se tient au fond de la passerelle, ~120° à droite de son axe (derrière son épaule droite, côté opposé à la
+ * caméra) : la viser pile montrerait sa nuque. Le lacet total est donc borné en douceur (≈ 60° : un peu au-delà du profil
+ * vu de la caméra, museau pointé vers elle dans l'image, mâchoire lisible en silhouette) ; les oreilles pivotent pour
+ * couvrir le reste.
+ * Le lacet est réparti bassin → reins → buste → cou (pieds plantés : l'IK des jambes absorbe le bassin), puis la tête
+ * achève la visée exacte, calculée dans le repère du cou à partir de la position monde de la cible. */
+const AIM_PIV = v3(0.05, 1.95, 0.85), AIM_YL = 1.12;
+const _aimM = new THREE.Matrix4(), _aimT = new V3(), _aimD = new V3(), _aimUp = new V3(), _aimX = new V3(), _aimY = new V3();
+const _qN = new Quat(), _qLook = new Quat(), _qOff = new Quat(), _eOff = new THREE.Euler();
+function duelAim(D, dt) {
+  if (!D.target) return;
+  root.updateMatrix();
+  _aimM.copy(root.matrix);
+  if (root.parent) _aimM.premultiply(root.parent.matrixWorld);
+  _aimT.copy(D.target).applyMatrix4(_aimM.invert()).sub(AIM_PIV);
+  const yT = Math.atan2(_aimT.x, _aimT.z), pT = Math.atan2(_aimT.y, Math.hypot(_aimT.x, _aimT.z));
+  const yE = AIM_YL * Math.tanh(yT / AIM_YL), pE = clamp(pT, -0.45, 0.35);
+  if (!st.dOn) { st.ay = yE; st.ap = pE; st.dOn = true; }
+  const k = 1 - Math.exp(-dt * 5); // elle bondit : la tête la suit sans à-coup
+  st.ay += (yE - st.ay) * k; st.ap += (pE - st.ap) * k;
+}
+// Oriente la tête (repère du cou) vers la direction de visée, garde le haut du crâne vers le ciel, ajoute les décalages
+// expressifs (flairer, gronder, rugir) puis mêle à la pose courante par w.
+function headLook(yaw, pitch, px, rz, w) {
+  _qN.copy(B.pelvis.quaternion).multiply(B.spine1.quaternion).multiply(B.spine2.quaternion).multiply(B.neck.quaternion).invert();
+  const cp = Math.cos(pitch);
+  _aimD.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).applyQuaternion(_qN).normalize();
+  _aimUp.set(0, 1, 0).applyQuaternion(_qN);
+  _aimX.crossVectors(_aimUp, _aimD).normalize();
+  _aimY.crossVectors(_aimD, _aimX);
+  _qLook.setFromRotationMatrix(_mb.makeBasis(_aimX, _aimY, _aimD));
+  _qLook.multiply(_qOff.setFromEuler(_eOff.set(px, 0, rz)));
+  B.head.quaternion.slerp(_qLook, w);
+}
+
 /* ---------- Traînée des griffes : 4 rubans additifs qui suivent les pointes pendant la frappe ---------- */
 const TR_N = 14, TR_C = 4;
 const trPos = new Float32Array(TR_C * TR_N * 2 * 3), trA = new Float32Array(TR_C * TR_N * 2);
@@ -1719,11 +1756,16 @@ function update(state) {
   const swS = ts < 0 ? 0 : env4(ts, 0.29, 0.44, 0.5, 0.64);
   const swF = ts < 0 ? 0 : env4(ts, 0.46, 0.62, 0.68, 0.995);
   const swAny = Math.max(swA, swS, swF);
+  // face-à-face : wL = il la regarde, R = il rugit vers elle
+  const D = state.duel, dOn = !!D && D.t >= 0;
+  const wL = dOn ? clamp(D.wolfLook || 0, 0, 1) : 0, R = dOn ? clamp(D.roar || 0, 0, 1) : 0;
+  const Bc = dOn ? clamp(D.lunge || 0, 0, 1) * (1 - R) * wL : 0; // elle bondit : il se campe, babines retroussées
+  if (dOn) duelAim(D, dt); else st.dOn = false;
   if (t < st.lastT - 0.5 || t > st.lastT + 10) resetTimers(t);
   st.lastT = t;
 
   // respiration (phase accumulée : pas de saut quand le rythme change)
-  const rate = 0.22 + 0.2 * Hn + 0.1 * G + 0.1 * F - 0.08 * H;
+  const rate = 0.22 + 0.2 * Hn + 0.1 * G + 0.1 * F - 0.08 * H + 0.1 * wL;
   st.bp = (st.bp + dt * Math.PI * 2 * rate) % (Math.PI * 2);
   const br = Math.sin(st.bp + 0.35 * Math.sin(st.bp)), bA = 1 + 0.7 * Hn + 0.4 * F;
 
@@ -1742,7 +1784,7 @@ function update(state) {
   st.vy += (lw * lw * (st.fy - st.ly) - 2 * lw * st.vy) * dt; st.ly += st.vy * dt;
   st.vx += (lw * lw * (st.fx - st.lx) - 2 * lw * st.vx) * dt; st.lx += st.vx * dt;
   st.vz += (lw * lw * (st.fz - st.lz) - 2 * lw * st.vz) * dt; st.lz += st.vz * dt;
-  const lookW = (1 - H) * (1 - 0.7 * S) * (1 - 0.6 * swAny);
+  const lookW = (1 - H) * (1 - 0.7 * S) * (1 - 0.6 * swAny) * (1 - wL);
 
   // reniflements spontanés
   if (t > st.sniffNext) { st.sniffT0 = t; st.sniffNext = t + 9 + arnd() * 12; }
@@ -1788,11 +1830,27 @@ function update(state) {
   pel.position.y -= 0.08 * hb; pel.position.z += 0.03 * hb; // genoux plus fléchis : accroupi, prêt à bondir
   pel.rotation.x += 0.1 * hb; B.spine1.rotation.x += 0.14 * hb; B.spine2.rotation.x += (HUNCH - 0.24) * hb;
   B.neck.rotation.x += 0.12 * hb; B.head.rotation.x -= (HUNCH + 0.06) * hb;
+  if (wL > 0.001) {
+    /* --- face-à-face : il se retourne vers Briar (torsion bassin → cou, la tête achève la visée), gronde, rugit ---
+     * rugissement (distinct du hurlement au ciel) : poitrail bombé, cou projeté vers elle, buste plus engagé. */
+    const yw = (st.ay + nz(t * 0.9, 3) * 0.02) * wL, cm = 1 + 0.3 * R;
+    pel.rotation.y += yw * 0.08 * cm; B.spine1.rotation.y += yw * 0.1 * cm; B.spine2.rotation.y += yw * 0.15 * cm; B.neck.rotation.y += yw * 0.3;
+    pel.position.x -= 0.04 * R * wL; pel.position.y += 0.035 * R - 0.025 * G * wL - 0.05 * Bc; pel.position.z -= 0.03 * Bc;
+    B.spine1.rotation.x -= 0.06 * R; B.spine2.rotation.x += -0.16 * R + 0.05 * G * wL + 0.07 * Bc; B.neck.rotation.x += 0.2 * R + 0.04 * G - 0.05 * Bc;
+    B.ribs.scale.x += R * 0.05; B.ribs.scale.y += R * 0.02; B.ribs.scale.z += R * 0.08;
+    // tête : visée exacte ; tête basse qui la fixe sous l'arcade, museau levé quand il flaire, abaissée au grondement
+    headLook(st.ay, st.ap, 0.03 - 0.17 * S - sniff * 0.05 + 0.12 * G - 0.08 * R + 0.06 * Bc + br * 0.008,
+      nz(t * 0.13, 7) * 0.03 + 0.05 * G, wL);
+  }
   const rumble = G * Math.sin(t * 61) * 0.012 + Hn * Math.sin(t * 47) * 0.004;
-  B.jaw.rotation.x = 0.13 + br * 0.015 * (0.5 + Hn) + Hn * 0.1 + H * (0.8 + 0.03 * Math.sin(t * 8.3)) + G * 0.3 + swA * 0.1 + swS * 0.3 + swF * 0.12 + F * 0.08 + rumble - sniff * 0.02;
+  B.jaw.rotation.x = 0.13 + br * 0.015 * (0.5 + Hn) + Hn * 0.1 + H * (0.8 + 0.03 * Math.sin(t * 8.3)) + G * 0.3 + swA * 0.1 + swS * 0.3 + swF * 0.12 + F * 0.08 + rumble - sniff * 0.02
+    + R * (0.86 + 0.04 * Math.sin(t * 29) + 0.02 * Math.sin(t * 47)) + Bc * (0.16 + Math.sin(t * 61) * 0.01);
   for (let e = 0; e < 2; e++) {
     const s = SIDES[e], E = st.ear[e], tw = env4(t - E.t0, 0, 0.05, 0.1, 0.38) * E.amp;
-    EARS[e].rotation.set(-0.12 * Hn + 0.25 * H - 0.4 * G + 0.18 * S - 0.45 * tw + nz(t * 0.21, 9 + e) * 0.05 + swS * 0.12 + swA * 0.06, 0, s * (0.18 * tw + 0.1 * Hn + 0.2 * G + 0.12 * H));
+    // face-à-face : dressées et tournées vers elle (elles couvrent le lacet que la tête ne fait pas), couchées au rugissement
+    const eL = wL * (1 - R) * (1 - 0.6 * G) * (1 - 0.6 * Bc);
+    EARS[e].rotation.set(-0.12 * Hn + 0.25 * H - 0.4 * G + 0.18 * S - 0.45 * tw * (1 - 0.7 * wL) + nz(t * 0.21, 9 + e) * 0.05 + swS * 0.12 + swA * 0.06 + 0.28 * eL - 0.5 * R - 0.3 * Bc,
+      -0.42 * eL, s * (0.18 * tw * (1 - 0.7 * wL) + 0.1 * Hn + 0.2 * G + 0.12 * H + 0.16 * R));
   }
   /* --- bras : hurlement = bras grands ouverts vers l'arrière, poignets cassés, griffes déployées --- */
   for (let i = 0; i < 2; i++) {
@@ -1805,6 +1863,14 @@ function update(state) {
     // repos : bras longs portés en avant et écartés (compense le tangage du buste)
     A.arm.rotation.x -= 0.5 * hb; A.arm.rotation.z += s * 0.1 * hb;
     A.hand.rotation.set(-Hn * 0.12 + H * 0.4 - F * 0.25, 0, s * H * 0.2);
+    if (R > 0.001) { // rugissement : poitrail ouvert, bras écartés griffes déployées, poignets cassés
+      // bras droit (côté Briar) levé et tendu vers elle ; bras gauche (côté caméra) écarté et rejeté en arrière :
+      // il ne passe jamais devant la gueule
+      const tr = Math.sin(t * 23 + s * 2) * 0.025, far = s < 0 ? 1 : 0;
+      A.clav.rotation.y += s * R * (0.2 - 0.32 * far); A.clav.rotation.z += s * R * 0.14;
+      A.arm.rotation.x += R * (0.55 - 0.72 * far + tr); A.arm.rotation.z += s * R * (0.48 + 0.14 * far + tr);
+      A.fore.rotation.x -= R * (0.15 + 0.3 * far); A.hand.rotation.x += R * 0.42; A.hand.rotation.z += s * R * 0.15;
+    }
   }
   { // coup de griffe : épaule droite qui recule puis jaillit, bras gauche en contrepoids
     const A = AR[1];
@@ -1837,9 +1903,10 @@ function update(state) {
       let c = 0.12 + nz(t * 0.23, f * 1.7 + i * 5) * 0.07 + Hn * 0.18 - H * 0.5;
       c += F * (0.75 * (0.5 + 0.5 * Math.sin(t * 7.2 - f * 0.55 + i)) - 0.35);
       if (i === 1) c += swA * 0.3 - swS * 0.5 - swF * 0.15;
+      c += (G * wL + Bc) * 0.18 - R * (0.6 + 0.14 * Math.sin(t * 11 + f * 1.3 + i * 2)); // griffes qui se crispent, puis déployées
       Fh.fingers[f].quaternion.setFromAxisAngle(Fh.axis, c);
     }
-    Fh.thumb.quaternion.setFromAxisAngle(Fh.taxis, 0.1 + F * 0.3 * Math.sin(t * 7.2 + i) + Hn * 0.1 - H * 0.2);
+    Fh.thumb.quaternion.setFromAxisAngle(Fh.taxis, 0.1 + F * 0.3 * Math.sin(t * 7.2 + i) + Hn * 0.1 - H * 0.2 - R * 0.25);
   }
   /* --- jambes (pieds plantés) --- */
   pel.updateMatrix();
@@ -1848,15 +1915,17 @@ function update(state) {
   solveLeg(LEGS[0], tilt); solveLeg(LEGS[1], tilt);
   /* --- queue (onde qui se propage le long de la chaîne ; dressée pendant le hurlement) --- */
   st.tp = (st.tp + dt * (1.0 + Hn * 0.6 + H * 0.4)) % (Math.PI * 200);
+  // face-à-face : queue raidie et relevée, qui fouette pendant le rugissement
   for (let i = 0; i < TAIL_N; i++) {
-    const amp = (0.022 + i * 0.006) * (1 - Hn * 0.35) * (1 + swAny * 0.6);
-    const lift = i === 0 ? H * 0.38 + Hn * 0.06 + G * 0.08 + swS * 0.08 : (H * 0.025 - Hn * 0.01 + G * 0.015);
-    TAIL[i].rotation.set(lift + 0.016 * Math.sin(st.tp * 0.63 - i * 0.45), amp * Math.sin(st.tp - i * 0.55) + (i === 0 ? -ws * 0.12 - swS * 0.2 + swA * 0.1 : 0), 0);
+    const amp = (0.022 + i * 0.006) * (1 - Hn * 0.35) * (1 + swAny * 0.6) * (1 - 0.4 * wL);
+    const lift = i === 0 ? H * 0.38 + Hn * 0.06 + G * 0.08 + swS * 0.08 + wL * 0.12 + R * 0.3 : (H * 0.025 - Hn * 0.01 + G * 0.015 + R * 0.012);
+    const lash = R * (0.035 + i * 0.011) * Math.sin(t * 8.5 - i * 0.7);
+    TAIL[i].rotation.set(lift + 0.016 * Math.sin(st.tp * 0.63 - i * 0.45), amp * Math.sin(st.tp - i * 0.55) + lash + (i === 0 ? -ws * 0.12 - swS * 0.2 + swA * 0.1 : 0), 0);
   }
   /* --- chimie, yeux, fourrure --- */
   const pal = state.palette;
   _chem.copy(pal && pal.chem ? pal.chem : _tmpC.setRGB(0.49, 1, 0.31)).lerp(pal && pal.blood ? pal.blood : RIM, Hn * 0.3);
-  const tankI = 1.9 + Math.sin(t * 1.9) * 0.12 + nz(t * 0.5, 2) * 0.1 + au.bass * 1.6 + au.beat * 0.5 + H * 0.8 + swS * 0.5;
+  const tankI = 1.9 + Math.sin(t * 1.9) * 0.12 + nz(t * 0.5, 2) * 0.1 + au.bass * 1.6 + au.beat * 0.5 + H * 0.8 + swS * 0.5 + R * 0.6;
   liqMat.uniforms.uColor.value.copy(_chem).multiplyScalar(tankI);
   liqMat.uniforms.uTime.value = t % TWRAP;
   U.uChem.value.copy(_chem).multiplyScalar(1.4 + au.bass * 0.8 + H * 0.4);
@@ -1866,17 +1935,18 @@ function update(state) {
   const blood = pal && pal.blood ? pal.blood : _tmpC.setRGB(1, 0.17, 0.17);
   // yeux : rouges même au plus fort (pas de blanc cramé), > 1 pour le bloom ; pulsation lente + battement
   const eyeP = 0.5 + 0.5 * Math.sin(t * 1.7 + Math.sin(t * 0.37) * 1.5);
-  const eyeI = (1.7 + eyeP * 0.35 + Hn * 2.0 + H * 1.2 + G * 1.2 + swS * 1.2 + au.beat * 0.8) * blink;
+  const eyeI = (1.7 + eyeP * 0.35 + Hn * 2.0 + H * 1.2 + G * 1.2 + swS * 1.2 + au.beat * 0.8 + wL * 0.7 + R * 1.5) * blink;
   // yeux rouge sang ; plus saturés (et plus intenses, voir eyeI) en traque
   _eyeC.copy(blood).lerp(_tmpC2.copy(blood).multiply(blood), Hn * 0.7);
   U.uBlood.value.copy(_eyeC).multiplyScalar(eyeI * (0.6 + 0.4 * Hn));
-  eyeMat.color.copy(_eyeC).multiplyScalar((0.62 + eyeP * 0.16 + Hn * 0.95 + H * 0.4 + G * 0.3 + au.beat * 0.3) * blink);
-  const es = (1 + eyeP * 0.08 + Hn * 0.45 + H * 0.2 + G * 0.25 + au.beat * 0.12) * (0.25 + 0.75 * blink);
-  eyeGlows[0].scale.set(0.22 * es, 0.1 * es * (0.35 + 0.65 * blink), 1); eyeGlows[1].scale.copy(eyeGlows[0].scale);
+  eyeMat.color.copy(_eyeC).multiplyScalar((0.62 + eyeP * 0.16 + Hn * 0.95 + H * 0.4 + G * 0.3 + au.beat * 0.3 + wL * 0.25 + R * 0.45) * blink);
+  const es = (1 + eyeP * 0.08 + Hn * 0.45 + H * 0.2 + G * 0.25 + au.beat * 0.12 + R * 0.15) * (0.25 + 0.75 * blink);
+  // face-à-face : yeux plissés (halo aplati, plus long) mais plus ardents
+  eyeGlows[0].scale.set(0.22 * es * (1 + 0.15 * wL), 0.1 * es * (0.35 + 0.65 * blink) * (1 - 0.4 * wL), 1); eyeGlows[1].scale.copy(eyeGlows[0].scale);
   U.uRim.value.copy(RIM).multiplyScalar(0.22).lerp(_tmpC2.copy(blood).multiplyScalar(0.3), Hn);
   U.uRim2.value.copy(RIM).multiplyScalar(0.07).lerp(_tmpC2.copy(blood).multiplyScalar(0.1), Hn * 0.85);
   U.uFill.value.copy(FILL).lerp(_tmpC2.copy(blood).multiplyScalar(0.16), Hn * 0.35).multiplyScalar(1 + au.bass * 0.15);
-  U.uBristle.value = clamp(Hn * 0.55 + H * 0.7 + G * 0.8 + swS * 0.4, 0, 1);
+  U.uBristle.value = clamp(Hn * 0.55 + H * 0.7 + G * 0.8 + swS * 0.4 + wL * 0.15 + R * 0.6, 0, 0.95 + 0.05 * (1 - wL));
   U.uRipple.value = 0.05 + Hn * 0.03;
   U.uTime.value = t % TWRAP;
   /* --- bave --- */

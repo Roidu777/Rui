@@ -1293,11 +1293,15 @@ function update(state, camera) {
   U.uHunt.value = h; U.uHowl.value = state.howl; U.uBass.value = bass; U.uHigh.value = high;
   U.uHead.value.copy(state.headPos);
   // Vacillement des lumières en traque + hurlement qui fait trembler les puits
-  const fl = 1 - h * 0.18 * (Math.sin(t * 23.0) * Math.sin(t * 7.3) > 0.6 ? 1 : 0) - h * 0.05 * (0.5 + 0.5 * Math.sin(t * 11.0));
+  // Face-à-face avec Briar : les lampes crachotent quand elle feule / il rugit, la brume et les puits virent au rouge
+  const du = state.duel, dFl = du ? du.flare || 0 : 0, dAl = du ? du.alert || 0 : 0;
+  const spit = dFl > 0.02 && Math.sin(t * 29.0) * Math.sin(t * 13.7) > 0.4 ? 1 : 0;
+  const fl = (1 - h * 0.18 * (Math.sin(t * 23.0) * Math.sin(t * 7.3) > 0.6 ? 1 : 0) - h * 0.05 * (0.5 + 0.5 * Math.sin(t * 11.0)))
+    * (1 - dFl * 0.22 * spit - dAl * 0.04 * (0.5 + 0.5 * Math.sin(t * 9.0)));
   U.uFlick.value = fl;
   // Brouillard et fond
   tmpC.copy(state.palette.chem).multiplyScalar(0.012);
-  scene.fog.color.copy(FOG_Z).add(tmpC).lerp(FOG_H, h);
+  scene.fog.color.copy(FOG_Z).add(tmpC).lerp(FOG_H, Math.min(1, h + dAl * 0.06 + dFl * (0.22 + 0.08 * Math.sin(t * 7.0))));
   scene.fog.density = BASE_DENSITY * (1 + h * 0.12);
   U.uFogColor.value.copy(scene.fog.color); U.uFogDensity.value = scene.fog.density;
   scene.background.copy(scene.fog.color);
@@ -1305,7 +1309,7 @@ function update(state, camera) {
   domeU.uGlow.value.copy(chemNow).multiplyScalar(0.06 * (1 - h * 0.3) + bass * 0.02);
   if (camera) dome.position.copy(camera.position);
   // Puits de lumière
-  U.uShaftCol.value.copy(SHAFT_Z).lerp(SHAFT_H, h);
+  U.uShaftCol.value.copy(SHAFT_Z).lerp(SHAFT_H, Math.min(1, h + dAl * 0.06 + dFl * (0.2 + 0.12 * Math.sin(t * 7.0))));
   domeU.uSky.value.copy(U.uShaftCol.value).multiplyScalar(0.05 * (1 - h * 0.5));
   const howlFl = state.howl > 0.05 ? 1 - state.howl * 0.35 * (0.5 + 0.5 * Math.sin(t * 31.0) * Math.sin(t * 17.0)) : 1;
   for (let i = 0; i < shafts.length; i++) {
@@ -1320,8 +1324,8 @@ function update(state, camera) {
   abyssLight.color.copy(chemNow); abyssLight.intensity = (3.0 + bass * 2) * (1 - h * 0.2);
   const beacon = 0.5 + 0.5 * Math.sin(t * (1.6 + h * 3.0));
   redRim.color.copy(state.palette.blood);
-  redRim.intensity = (3.2 + beacon * 1.4) * (1 + h * 1.2) + state.howl * 2.0 + (state.growl || 0) * 2.5;
-  warmLamp.color.copy(WARM).lerp(state.palette.blood, h * 0.6);
+  redRim.intensity = (3.2 + beacon * 1.4) * (1 + h * 1.2) + state.howl * 2.0 + (state.growl || 0) * 2.5 + (du ? du.roar || 0 : 0) * 2.0;
+  warmLamp.color.copy(WARM).lerp(state.palette.blood, Math.min(1, h * 0.6 + dAl * 0.2 + dFl * 0.45));
   warmLamp.intensity = 1.6 * (1 - h * 0.45) * fl * (Math.sin(t * 0.37) * Math.sin(t * 5.1) > 0.92 ? 0.55 : 1);
   hemi.color.copy(HEMI_SKY_Z).lerp(HEMI_SKY_H, h); hemi.groundColor.copy(chemNow).multiplyScalar(0.06);
   hemi.intensity = 0.14 * (1 - h * 0.35);
