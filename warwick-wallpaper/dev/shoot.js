@@ -21,6 +21,13 @@ const url = 'file://' + path.resolve(__dirname, '..', 'index.html') + '?dev' + (
     else if (s === 'howl') { await page.evaluate(() => __ww.trigger('howl')); await page.waitForFunction(() => __ww.state.howl > 0.95, null, { timeout: 300000 }); await snap('howl'); await page.waitForFunction(() => __ww.state.howl < 0.01 && __ww.state.sniff < 0.01, null, { timeout: 300000 }); }
     else if (s === 'sniff') { await page.evaluate(() => __ww.trigger('howl')); await page.waitForFunction(() => __ww.state.sniff > 0.95, null, { timeout: 300000 }); await snap('sniff'); await page.waitForFunction(() => __ww.state.howl < 0.01 && __ww.state.sniff < 0.01 && __ww.state.t > 0, null, { timeout: 300000 }); }
     else if (s === 'swipe') { await page.evaluate(() => __ww.trigger('swipe')); await page.waitForFunction(() => __ww.state.swipe > 0.3, null, { timeout: 300000 }); await snap('swipe'); }
+    else if (s === 'duel') {
+      await page.evaluate(() => __ww.trigger('duel'));
+      for (const [name, at] of [['duel1-flaire', 1.3], ['duel2-remarque', 2.8], ['duel3-gronde', 3.6], ['duel4-bond', 5.2], ['duel5-rugit', 6.3], ['duel6-recule', 8.2]]) {
+        await page.waitForFunction(x => __ww.state.duel.t > x, at, { timeout: 900000 }); await snap(name);
+      }
+      await page.waitForFunction(() => __ww.state.duel.t < 0, null, { timeout: 900000 });
+    }
     else if (s === 'flex') { await page.evaluate(() => __ww.trigger('flex')); await page.waitForFunction(() => __ww.state.flex > 0.95, null, { timeout: 300000 }); await snap('flex'); }
     else if (s === 'hunt') { await page.evaluate(() => __ww.set({ mode: 'hunt' })); await page.waitForFunction(() => __ww.state.hunt > 0.97, null, { timeout: 400000 }); await snap('hunt'); await page.evaluate(() => __ww.set({ mode: 'zaun' })); }
     else if (s.startsWith('pointer')) { await page.mouse.move(s.endsWith('L') ? 5 : W - 5, H / 2); await page.waitForTimeout(2500); await snap(s); }

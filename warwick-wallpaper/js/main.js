@@ -21,7 +21,7 @@ const QUALITY = {
 /* ---------- Pont Wallpaper Engine (ou remplaçant) ---------- */
 const DEFAULT_PROPS = {
   mode: 'cycle', events: true, eventinterval: 30, camerasway: true, parallax: true, audioreact: 60,
-  quality: 'high', bloom: 60, particles: 70, showtitle: false, chemcolor: [0.49, 1, 0.31], bloodcolor: [1, 0.17, 0.17],
+  quality: 'high', bloom: 60, particles: 70, showtitle: false, duels: true, chemcolor: [0.49, 1, 0.31], bloodcolor: [1, 0.17, 0.17],
 };
 function fallbackBridge() {
   const props = Object.assign({}, DEFAULT_PROPS);
@@ -69,6 +69,9 @@ const state = {
   audio: { level: 0, bass: 0, mid: 0, high: 0, beat: 0 },
   pointer: { x: 0, y: 0 }, q: QUALITY.high, particles: 0.7, bloom: 0.6,
   headPos: new THREE.Vector3(0, 2.4, 0.6),
+  // Face-à-face Warwick / Briar (voir CONTRACT.md) : t = secondes depuis le début, -1 hors séquence
+  duel: { t: -1, wolfLook: 0, briarLook: 0, alert: 0, lunge: 0, hiss: 0, roar: 0, flare: 0, target: new THREE.Vector3(-7, 1.3, -10) },
+  briarHeadPos: new THREE.Vector3(-7, 1.3, -10),
   palette: { chem: toColor(DEFAULT_PROPS.chemcolor), blood: toColor(DEFAULT_PROPS.bloodcolor) },
 };
 const opts = { quality: state.q, palette: state.palette, camera };
@@ -148,7 +151,8 @@ function applyQuality(name) {
 /* ---------- Scénario ---------- */
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const env4 = (t, a, b, c, d) => ss(a, b, t) * (1 - ss(c, d, t));
-const ev = { howl: -99, swipe: -99, flex: -99, growl: -99 };
+const ev = { howl: -99, swipe: -99, flex: -99, growl: -99, duel: -99 };
+const DUEL_LEN = 11; let duelsSeen = 0;
 let nextEvent = 6, huntTarget = 0, lastHuntTarget = 0, rngSeed = 7;
 const rnd = () => ((rngSeed = (rngSeed * 16807) % 2147483647) / 2147483647);
 function scheduleNext(reset) {
@@ -160,8 +164,9 @@ function trigger(name) {
   else if (name === 'swipe') ev.swipe = state.t;
   else if (name === 'flex') ev.flex = state.t;
   else if (name === 'growl') ev.growl = state.t;
+  else if (name === 'duel') { ev.duel = state.t; duelsSeen++; }
 }
-function busy() { return state.t - ev.howl < 5 || state.t - ev.swipe < 1.2 || state.t - ev.flex < 1.6; }
+function busy() { return state.t - ev.howl < 5 || state.t - ev.swipe < 1.2 || state.t - ev.flex < 1.6 || state.t - ev.duel < DUEL_LEN; }
 function updateScenario(dt) {
   const t = state.t;
   // Ambiance
@@ -175,7 +180,9 @@ function updateScenario(dt) {
   // Animations spontanées
   if (settings.events && t > nextEvent && !busy()) {
     const r = rnd(), aggressive = state.hunt > 0.5;
-    trigger(r < (aggressive ? 0.3 : 0.45) ? 'howl' : r < (aggressive ? 0.75 : 0.72) ? 'swipe' : 'flex');
+    // Le premier événement est un face-à-face (on le voit tout de suite), ensuite ~1 fois sur 3 (1 sur 2 en traque)
+    if (settings.duels && (duelsSeen === 0 || rnd() < (aggressive ? 0.5 : 0.33))) trigger('duel');
+    else trigger(r < (aggressive ? 0.3 : 0.45) ? 'howl' : r < (aggressive ? 0.75 : 0.72) ? 'swipe' : 'flex');
     scheduleNext();
   }
   // Séquence du hurlement : il flaire (0–1,8 s) puis hurle (1,5–4,7 s)
@@ -186,6 +193,20 @@ function updateScenario(dt) {
   state.swipe = ts >= 0 && ts <= 1 ? ts : -1;
   state.flex = env4(t - ev.flex, 0, 0.25, 0.9, 1.4);
   state.growl = env4(t - ev.growl, 0, 0.2, 0.8, 1.3);
+
+  // Face-à-face : il sent le sang, elle le remarque, il gronde, elle bondit et feule, il rugit, elle recule
+  const td = t - ev.duel, D = state.duel;
+  D.t = td >= 0 && td <= DUEL_LEN ? td : -1;
+  D.wolfLook = env4(td, 0.2, 1.2, 9.4, 10.6);   // Warwick tourne la tête (et un peu le buste) vers Briar
+  D.briarLook = env4(td, 1.6, 2.0, 9.6, 10.8);  // Briar tourne la tête vers Warwick
+  D.alert = env4(td, 1.6, 2.1, 8.6, 9.6);       // Briar se ramasse, yeux et runes qui s'embrasent
+  D.lunge = ss(4.2, 5.0, td) * (1 - ss(7.6, 8.6, td)); // 0 = à sa place, 1 = bond en avant vers Warwick (aller 4,2–5 s, retour 7,6–8,6 s)
+  D.hiss = env4(td, 5.0, 5.3, 6.6, 7.4);        // Briar en frénésie : tête en avant, cheveux et pilori qui tremblent
+  D.roar = env4(td, 5.4, 5.8, 6.8, 7.4);        // Warwick rugit VERS elle (pas vers le ciel)
+  D.flare = Math.max(D.hiss, D.roar);
+  D.target.copy(state.briarHeadPos);
+  state.sniff = Math.max(state.sniff, env4(td, 0.4, 0.8, 1.6, 2.2));
+  state.growl = Math.max(state.growl, env4(td, 2.8, 3.1, 4.0, 4.5));
 }
 
 /* ---------- Pointeur ---------- */
@@ -211,7 +232,7 @@ function updateCamera(dt) {
   lookAt.y += state.howl * 0.12;
   camera.lookAt(lookAt);
   // Tremblement du hurlement
-  const shake = Math.max(0, state.howl - 0.45) * 0.018 + state.audio.beat * 0.004;
+  const shake = Math.max(0, state.howl - 0.45) * 0.018 + Math.max(0, state.duel.roar - 0.5) * 0.014 + state.audio.beat * 0.004;
   if (shake > 0) {
     camera.position.x += (Math.sin(t * 43.1) + Math.sin(t * 71.7)) * shake;
     camera.position.y += (Math.sin(t * 52.3) + Math.sin(t * 87.9)) * shake;
@@ -245,6 +266,7 @@ function loop(now) {
   try { wolf.root.updateMatrixWorld(); wolf.getHeadWorldPosition(state.headPos); } catch (e) { reportOnce('head', e); }
   try { env.update(state, camera); } catch (e) { reportOnce('environment', e); }
   try { briar.update(state); } catch (e) { reportOnce('briar', e); }
+  try { if (briar.getHeadWorldPosition) { briar.root.updateMatrixWorld(); briar.getHeadWorldPosition(state.briarHeadPos); } } catch (e) { reportOnce('briarHead', e); }
   try { post.render(state); } catch (e) { reportOnce('post', e); renderer.render(scene, camera); }
 }
 const reported = {};

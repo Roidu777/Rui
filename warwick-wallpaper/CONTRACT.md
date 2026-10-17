@@ -88,6 +88,8 @@ WW.createBridge(opts) -> {
 | `growl` | 0..1 | grognement (entrée en traque) |
 | `audio` | objet | `{ level, bass, mid, high, beat }` déjà multipliés par la réactivité choisie |
 | `pointer` | {x,y} | souris lissée, -1..1 |
+| `duel` | objet | face-à-face Warwick/Briar (11 s) : `t` (s depuis le début, -1 sinon), enveloppes 0..1 `wolfLook` (0,2–10,6 s), `briarLook` (1,6–10,8), `alert` (1,6–9,6), `lunge` (aller 4,2–5,0 / retour 7,6–8,6 ; 1 = bondie vers Warwick), `hiss` (5,0–7,4), `roar` (5,4–7,4, Warwick rugit vers elle), `flare` = max(hiss, roar), `target` (Vector3 : tête de Briar). `sniff` et `growl` sont aussi pilotés pendant la séquence (0,4–2,2 s et 2,8–4,5 s). |
+| `briarHeadPos` | Vector3 | tête de Briar (mise à jour par main après `briar.update`, via `briar.getHeadWorldPosition(v)`) |
 | `headPos` | Vector3 | position monde de la tête (mise à jour par main après `wolf.update`) |
 | `q` | objet | préréglage de qualité courant |
 | `particles` | 0..1+ | densité de particules (réglage × qualité) |
@@ -108,6 +110,7 @@ WW.createBridge(opts) -> {
 | `bloom` | slider 0–100 | 60 | Halo lumineux |
 | `particles` | slider 0–100 | 70 | Particules |
 | `showtitle` | bool | false | Afficher le titre |
+| `duels` | bool | true | Face-à-face avec Briar |
 | `chemcolor` | color | `0.49 1 0.31` | Couleur chimique |
 | `bloodcolor` | color | `1 0.17 0.17` | Couleur de la traque |
 

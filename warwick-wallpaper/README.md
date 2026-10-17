@@ -61,6 +61,7 @@ Tous les réglages s'appliquent en direct, sans recharger la page.
 |---|---|---|---|
 | Ambiance | `mode` | Chimie de Zaun · Traque sanglante · Cycle | *Cycle* alterne ~78 s de brume verte et ~32 s de traque rouge (grognement à l'entrée en traque). |
 | Animations spontanées | `events` | oui / non | Flairer puis hurler, coup de griffe, crissement des lames, à intervalles aléatoires. |
+| Face-à-face avec Briar | `duels` | oui / non | De temps en temps, Warwick sent Briar au fond de la ruelle : il se retourne, gronde, elle bondit vers lui en feulant, il lui rugit dessus et elle recule dans l'ombre (≈ 11 s). Le premier événement est toujours un face-à-face. |
 | Intervalle des animations (s) | `eventinterval` | 10 – 120 (30) | Temps moyen entre deux animations (±40 % au hasard). Masqué si les animations sont coupées. |
 | Mouvement de caméra | `camerasway` | oui / non | Lente dérive cinématique de la caméra. |
 | Parallaxe à la souris | `parallax` | oui / non | La vue suit légèrement le pointeur. |
