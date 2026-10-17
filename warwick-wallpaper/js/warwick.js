@@ -271,42 +271,80 @@ function triO(bld, A, Bv, Cv, cA, cB, cC, fA, fB, fC, ref, s) {
   _fn.normalize();
   bld.push(A, _fn, cA, _w, s, fA); bld.push(Bv, _fn, cB, _w, s, fB); bld.push(Cv, _fn, cC, _w, s, fC);
 }
+// triangle à normales par sommet, orienté vers l'extérieur de ref
+function triN(bld, A, Bv, Cv, nA, nB, nC, cA, cB, cC, fA, fB, fC, ref, s) {
+  _e1.subVectors(Bv, A); _e2.subVectors(Cv, A); _fn.crossVectors(_e1, _e2);
+  if (_fn.lengthSq() < 1e-14) return;
+  _rc.copy(A).add(Bv).add(Cv).multiplyScalar(1 / 3).sub(ref);
+  if (_fn.dot(_rc) < 0) { let t = Bv; Bv = Cv; Cv = t; t = nB; nB = nC; nC = t; t = cB; cB = cC; cC = t; t = fB; fB = fC; fC = t; }
+  bld.push(A, nA, cA, _w, s, fA); bld.push(Bv, nB, cB, _w, s, fB); bld.push(Cv, nC, cC, _w, s, fC);
+}
+const LK_N4 = [new V3(), new V3(), new V3(), new V3()], LK_NT = new V3();
 const _ref = new V3();
+/* Mèche = touffe épaisse : tube effilé à 4 pans (arête dorsale arrondie, flancs vifs, quille dessous), cintré sur sa
+ * longueur (bombé + pointe qui retombe vers la peau) et légèrement ondulé de côté ; large au tiers, pointe fine.
+ * Dégradé racine sombre (occlusion) → pointe claire, dessous plus sombre. Hérissement (aFx) : la touffe entière pivote
+ * autour de sa racine (redressée vers la normale, angle borné, un peu éventée), jamais d'éclats ajoutés. */
+const LK_N = 4, LK_R = [], LK_FX = [], LK_C = [];
+for (let i = 0; i <= LK_N; i++) {
+  LK_R.push([new V3(), new V3(), new V3(), new V3()]); LK_FX.push([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]);
+  LK_C.push([new THREE.Color(), new THREE.Color(), new THREE.Color(), new THREE.Color()]);
+}
+const _lc = new V3(), _lrq = new Quat(), _lfq = new Quat(), _lv = new V3(), _lcen = [new V3(), new V3()];
 function lock(bld, p, n, dir, len, wid, cR, cT, o) {
   o = o || {};
   _sd.crossVectors(n, dir); if (_sd.lengthSq() < 1e-8) _sd.set(1, 0, 0); _sd.normalize();
   _up.crossVectors(dir, _sd).normalize();
-  const th = wid * (o.thick || 0.3), arch = len * (o.arch != null ? o.arch : 0.08), curl = len * (o.curl != null ? o.curl : 0.08);
+  const th = wid * (o.thick || 0.42), arch = len * (o.arch != null ? o.arch : 0.08), curl = len * (o.curl != null ? o.curl : 0.08);
+  const sway = (rnd() - 0.5) * 0.16 * len, mw = o.mid != null ? o.mid : 0.66;
   _b0.copy(p).addScaledVector(n, -0.015);
-  // section : arête dorsale + deux flancs (le dessous, collé au corps, ne se voit pas)
-  RB[0].copy(_b0).addScaledVector(_sd, wid).addScaledVector(_up, -th * 0.35); RB[1].copy(_b0).addScaledVector(_up, th);
-  RB[2].copy(_b0).addScaledVector(_sd, -wid).addScaledVector(_up, -th * 0.35);
-  // touffe en feuille : corps large jusqu'aux deux tiers, pointe courte
-  const mw = o.mid != null ? o.mid : 0.66; // effilée en pointe (plus de losanges)
-  _m.copy(_b0).addScaledVector(dir, len * 0.58).addScaledVector(_up, arch);
-  RM[0].copy(_m).addScaledVector(_sd, wid * mw).addScaledVector(_up, -th * 0.25); RM[1].copy(_m).addScaledVector(_up, th * 0.75);
-  RM[2].copy(_m).addScaledVector(_sd, -wid * mw).addScaledVector(_up, -th * 0.25);
-  _tip.copy(_b0).addScaledVector(dir, len).addScaledVector(_up, arch * 0.5 + curl);
-  // hérissement : la mèche se redresse vers la normale
+  // hérissement : rotation de toute la touffe autour de sa racine (vers la normale), plus un petit éventail
   const raise = o.raise != null ? o.raise : 1;
-  _dr.copy(dir).addScaledVector(n, 1.4).normalize();
-  _q1.copy(_b0).addScaledVector(_dr, len * 1.05).sub(_tip).multiplyScalar(raise);
-  _q2.copy(_b0).addScaledVector(_dr, len * 0.6).sub(_m).multiplyScalar(raise);
-  FXT[0] = _q1.x; FXT[1] = _q1.y; FXT[2] = _q1.z; FXT[3] = 0;
-  FXM[0] = _q2.x; FXM[1] = _q2.y; FXM[2] = _q2.z; FXM[3] = 0;
-  _cMid.copy(cR).lerp(cT, 0.55);
+  _lrq.setFromAxisAngle(_sd, -0.62 * raise);
+  _lfq.setFromAxisAngle(n, (rnd() - 0.5) * 0.5 * raise);
+  _lrq.premultiply(_lfq);
+  for (let i = 0; i <= LK_N; i++) {
+    const u = i / LK_N;
+    // profil : 70 % à la racine, le plus large au tiers, pointe fine (mid règle l'épaule de la touffe)
+    const pw = i === LK_N ? 0 : Math.pow(Math.sin(Math.PI * (0.25 + 0.75 * u)), 0.85) * lerp(1, mw / 0.66, u);
+    const w = wid * pw, t = th * (1 - 0.82 * u);
+    _lc.copy(_b0).addScaledVector(dir, len * u).addScaledVector(_up, arch * 4 * u * (1 - u) + curl * u * u).addScaledVector(_sd, sway * Math.sin(Math.PI * u));
+    const R = LK_R[i];
+    R[0].copy(_lc).addScaledVector(_sd, w).addScaledVector(_up, -t * 0.15);
+    R[1].copy(_lc).addScaledVector(_up, t);
+    R[2].copy(_lc).addScaledVector(_sd, -w).addScaledVector(_up, -t * 0.15);
+    R[3].copy(_lc).addScaledVector(_up, -t * 0.55);
+    const cu = Math.pow(u, 0.75);
+    for (let k = 0; k < 4; k++) {
+      const c = LK_C[i][k].copy(cR).lerp(cT, cu);
+      c.multiplyScalar((0.62 + 0.38 * ss(0, 0.45, u)) * (k === 3 ? 0.62 : k === 1 ? 1.06 : 1));
+      _lv.copy(R[k]).sub(_b0); const FX = LK_FX[i][k];
+      _t1.copy(_lv).applyQuaternion(_lrq).sub(_lv);
+      FX[0] = _t1.x; FX[1] = _t1.y; FX[2] = _t1.z; FX[3] = 0;
+      if (i === LK_N) break;
+    }
+  }
   setW(o, p);
   const s = o.surf || SF.card; // SF.card : le shader plafonne liseré et contre-jour sur les mèches
-  sgNew(true);
-  for (let k = 0; k < 3; k++) {
-    const k1 = k === 2 ? 0 : k + 1;
-    _ref.copy(_b0).add(_m).multiplyScalar(0.5);
-    triO(bld, RB[k], RB[k1], RM[k1], cR, cR, _cMid, FX0, FX0, FXM, _ref, s);
-    triO(bld, RB[k], RM[k1], RM[k], cR, _cMid, _cMid, FX0, FXM, FXM, _ref, s);
-    _ref.copy(_m).add(_tip).multiplyScalar(0.5);
-    triO(bld, RM[k], RM[k1], _tip, _cMid, _cMid, cT, FXM, FXM, FXT, _ref, s);
-  }
+  // normales : rondeur du tube mêlée à la normale du corps (la touffe s'éclaire comme la masse qu'elle couvre :
+  // plus de facettes de carton, le relief vient de la silhouette et du dégradé)
+  LK_N4[0].copy(_sd).addScaledVector(_up, 0.25); LK_N4[1].copy(_up); LK_N4[2].copy(_sd).negate().addScaledVector(_up, 0.25); LK_N4[3].copy(_up).negate();
+  for (let k = 0; k < 4; k++) LK_N4[k].multiplyScalar(0.6).addScaledVector(n, 0.55).normalize();
+  LK_NT.copy(n).addScaledVector(dir, 0.35).normalize();
   sgNew(false);
+  for (let i = 0; i < LK_N; i++) {
+    const A = LK_R[i], Bq = LK_R[i + 1], cA = LK_C[i], cB = LK_C[i + 1], fA = LK_FX[i], fB = LK_FX[i + 1];
+    _ref.copy(A[1]).add(A[3]).add(Bq[1]).add(Bq[3]).multiplyScalar(0.25);
+    const tipSeg = i + 1 === LK_N;
+    if (tipSeg) _ref.copy(A[1]).add(A[3]).multiplyScalar(0.5);
+    for (let k = 0; k < 4; k++) {
+      const k1 = (k + 1) & 3;
+      if (!tipSeg) {
+        triN(bld, A[k], A[k1], Bq[k1], LK_N4[k], LK_N4[k1], LK_N4[k1], cA[k], cA[k1], cB[k1], fA[k], fA[k1], fB[k1], _ref, s);
+        triN(bld, A[k], Bq[k1], Bq[k], LK_N4[k], LK_N4[k1], LK_N4[k], cA[k], cB[k1], cB[k], fA[k], fB[k1], fB[k], _ref, s);
+      } else triN(bld, A[k], A[k1], Bq[0], LK_N4[k], LK_N4[k1], LK_NT, cA[k], cA[k1], cB[0], fA[k], fA[k1], fB[0], _ref, s);
+    }
+  }
 }
 // Peigne de mèches sur une zone d'un volume (par touffes de 1 à 3 mèches)
 const _u = new V3(), _p = new V3(), _nn = new V3(), _d = new V3(), _pc = new V3(), _dc = new V3(), _tg = new V3();
@@ -315,10 +353,10 @@ function fur(bld, v, count, o) {
   let made = 0;
   count = Math.round(count * (bld === core ? FD : 1));
   const clump = o.clump || 2;
-  for (let tries = 0; made < count && tries < count * 40; tries++) {
+  for (let tries = 0, maxT = count * (v.pts ? 400 : 40); made < count && tries < maxT; tries++) {
     const z = rnd() * 2 - 1, ph = rnd() * Math.PI * 2, rxy = Math.sqrt(1 - z * z);
     _u.set(rxy * Math.cos(ph), rxy * Math.sin(ph), z);
-    volPoint(v, _u, _p, _nn);
+    if (v.pts) { const P = v.pts[(rnd() * v.pts.length) | 0]; _p.copy(P.p); _nn.copy(P.n); } else volPoint(v, _u, _p, _nn);
     if (o.filter && !o.filter(_p, _nn)) continue;
     if (o.occl !== false && occluded(_p, v, o.occLim || 0.93)) continue;
     o.flow(_p, _nn, _d);
@@ -339,7 +377,7 @@ function fur(bld, v, count, o) {
       _pc.copy(_p).addScaledVector(_tg, off).addScaledVector(_d, -Math.abs(off) * 0.5 - (c === 0 ? 0 : wid0 * 0.6));
       _dc.copy(_d).addScaledVector(_tg, off * 0.5 + (rnd() - 0.5) * 0.05).addScaledVector(_nn, lf + rr(-0.04, 0.06)).normalize();
       const k = c === 0 ? 1 : rr(0.7, 0.88);
-      lock(bld, _pc, _nn, _dc, len0 * k, wid0 * (c === 0 ? 1 : 0.85), _cR, _cT, { w: o.w || v.w, mid: o.mid, raise: o.raise, arch: o.arch, curl: o.curl != null ? o.curl : -0.02, thick: o.thick || 0.36 });
+      lock(bld, _pc, _nn, _dc, len0 * k, wid0 * (c === 0 ? 1 : 0.85), _cR, _cT, { w: o.w || v.w, mid: o.mid, raise: o.raise, arch: o.arch, curl: o.curl != null ? o.curl : -0.06, thick: o.thick || 0.46 });
     }
     made++;
   }
@@ -548,12 +586,15 @@ for (const s of SIDES) {
   for (let k = 0; k < 3; k++) // abdominaux sculptés
     TORSO.push(ellip(core, v3(s * 0.085, 1.80 - k * 0.12, 0.33 - k * 0.045), v3(0.085, 0.06, 0.05), qE(0.3, 0, 0), { w: k === 0 ? 'ribs' : wTorso, color: C.furW, detail: 1, bump: 0.15 }));
 }
-const humpV = ellip(core, v3(0, 2.29, -0.12), v3(0.52, 0.34, 0.46), qE(-0.25, 0, 0), { w: 'spine2', color: backCol, detail: 3 });
+const humpV = ellip(core, v3(0, 2.32, -0.11), v3(0.55, 0.37, 0.47), qE(-0.25, 0, 0), { w: 'spine2', color: backCol, detail: 3 });
 TORSO.push(humpV);
+// garrot : bosse massive entre les omoplates, qui monte derrière la nuque (silhouette du splash : le dos domine la tête)
+const napeV = ellip(core, v3(0, 2.5, 0.02), v3(0.3, 0.2, 0.25), qE(-0.35, 0, 0), { w: (p, w) => { const t = ss(0.05, 0.3, p.z) * 0.6; w[0] = I('spine2'); w[1] = I('neck'); w[2] = 1 - t; w[3] = t; }, color: backCol, detail: 2 });
+TORSO.push(napeV);
 const LAT_V = {}, TRAP = {};
 for (const s of SIDES) {
   TORSO.push(LAT_V[s] = ellip(core, v3(s * 0.36, 1.87, -0.17), v3(0.25, 0.43, 0.29), qE(0, 0, s * 0.22), { w: 'spine2', color: backCol }));
-  TORSO.push(TRAP[s] = ellip(core, v3(s * 0.33, 2.33, 0.03), v3(0.33, 0.18, 0.26), qE(0, 0, -s * 0.42), { w: wLerp('spine2', 'clav' + SK(s), p => ss(0.3, 0.55, Math.abs(p.x))), color: backCol }));
+  TORSO.push(TRAP[s] = ellip(core, v3(s * 0.32, 2.38, 0.02), v3(0.36, 0.22, 0.28), qE(0, 0, -s * 0.38), { w: wLerp('spine2', 'clav' + SK(s), p => ss(0.3, 0.55, Math.abs(p.x))), color: backCol }));
 }
 const neckV = ellip(core, v3(0, 2.33, 0.38), v3(0.22, 0.23, 0.28), qE(-0.18, 0, 0), { w: wNeck, color: backCol });
 const throatV = ellip(core, v3(0, 2.2, 0.45), v3(0.17, 0.14, 0.2), qE(0.1, 0, 0), { w: wNeck, color: C.furM.clone().lerp(C.furW, 0.3), tint: 0.1 });
@@ -715,82 +756,219 @@ const jp = (x, y, z) => v3(JJ.x + x * HS, JJ.y + y * HS, JJ.z + z * HS);
 const hr = (x, y, z) => v3(x * HS, y * HS, z * HS);
 const tooth = { surf: SF.tooth, c0: C.tooth, c1: C.tooth, cap: false };
 const HEADV = [];
-const toHead = p => _t2.copy(p).sub(HJ).divideScalar(HS);
-const slate = (c, n, out) => out.copy(C.furM).lerp(C.furB, 0.25 + 0.35 * ss(-0.2, 0.8, n.y));
-const cran = ellip(core, hp(0, 0.06, -0.02), hr(0.2, 0.17, 0.21), null, {
-  w: 'head', detail: 2, jitter: 0.06,
-  color: (c, n, out) => out.copy(C.furM).lerp(C.furD, ss(0.1, 0.8, n.y - n.z)),
-});
-HEADV.push(cran);
-HEADV.push(ellip(core, hp(0, 0.04, -0.14), hr(0.17, 0.15, 0.12), null, { w: 'head', color: C.furD, detail: 1 }));
-// arcade massive : bourrelet frontal + sourcils froncés en V (bout intérieur plus bas) qui surplombent les yeux
-HEADV.push(ellip(core, hp(0, 0.125, 0.15), hr(0.185, 0.062, 0.1), qE(0.3, 0, 0), { w: 'head', color: slate, detail: 2, jitter: 0.05 }));
-const cheek = {}, ruff = {};
-for (const s of SIDES) {
-  HEADV.push(ellip(core, hp(s * 0.096, 0.104, 0.222), hr(0.098, 0.05, 0.085), qE(0.25, s * 0.3, s * 0.5), { w: 'head', color: slate, detail: 2, jitter: 0.05 }));
-  // pommette / joue (ardoise moyenne) puis base de la collerette, plus en arrière et en dehors
-  HEADV.push(cheek[s] = ellip(core, hp(s * 0.14, -0.025, 0.13), hr(0.11, 0.105, 0.13), qE(0, s * 0.3, 0), { w: 'head', color: slate, detail: 2, jitter: 0.06 }));
-  HEADV.push(ruff[s] = ellip(core, hp(s * 0.17, -0.06, -0.01), hr(0.12, 0.15, 0.14), qE(0, s * 0.25, 0), { w: 'head', color: C.furD, detail: 1, jitter: 0.06 }));
+/* Sculpture : la tête et la mâchoire sont deux surfaces implicites (unions lisses de formes simples) maillées par
+ * tranches : une seule forme cohérente (crâne, stop, arcade fondue, orbites creusées, museau à dessus plat et avant
+ * carré, truffe en coin), plus de boudins empilés. Repère « tête » (× HS) : x latéral, y haut, z vers la truffe. */
+const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
+const smax = (a, b, k) => -smin(-a, -b, k);
+function sdE(x, y, z, rx, ry, rz) { // ellipsoïde (approximation usuelle)
+  const k0 = Math.hypot(x / rx, y / ry, z / rz), k1 = Math.hypot(x / (rx * rx), y / (ry * ry), z / (rz * rz));
+  return k1 < 1e-9 ? -Math.min(rx, ry, rz) : k0 * (k0 - 1) / k1;
 }
-// museau court et profond : chanfrein ardoise qui s'éclaircit vers la truffe, flancs plus clairs, babine noire nette
-const lipY = z => lerp(-0.094, -0.07, ss(0.12, 0.44, z));
-const muzCol = (c, n, out) => {
-  const l = toHead(c);
-  if (l.y < lipY(l.z) || n.y < -0.55) out.copy(C.skin);
-  else if (n.y > 0.5) out.copy(C.furM).lerp(C.furW, 0.2 + 0.45 * ss(0.18, 0.48, l.z));
-  else out.copy(C.furB).lerp(C.furW, 0.35 + 0.45 * ss(0.03, -0.06, l.y));
+function sdCap(x, y, z, a, b, r) {
+  const px = x - a[0], py = y - a[1], pz = z - a[2], dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+  const h = clamp((px * dx + py * dy + pz * dz) / (dx * dx + dy * dy + dz * dz), 0, 1);
+  return Math.hypot(px - dx * h, py - dy * h, pz - dz * h) - r;
+}
+function sdRR(x, y, hx, hy, r) { // rectangle arrondi (2D)
+  const qx = Math.abs(x) - hx + r, qy = Math.abs(y) - hy + r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+}
+function sdGrad(f, x, y, z, out) {
+  const e = 0.0012;
+  return out.set(f(x + e, y, z) - f(x - e, y, z), f(x, y + e, z) - f(x, y - e, z), f(x, y, z + e) - f(x, y, z - e)).normalize();
+}
+// projette un point local sur la surface (descente le long du gradient)
+function onSurf(f, p) {
+  for (let i = 0; i < 6; i++) { const d = f(p.x, p.y, p.z); sdGrad(f, p.x, p.y, p.z, _g); p.addScaledVector(_g, -d); }
+  return p;
+}
+const _g = new V3(), _gn = new V3();
+/* Maillage par tranches z (resserrées aux deux bouts) ; dans chaque tranche, rayons depuis un point intérieur,
+ * dernier passage dedans → dehors (les creux : orbites, auge de la mâchoire, restent captés). Normales = gradient.
+ * Renvoie la grille (positions modèle, normales, coordonnées locales) pour y planter la fourrure. */
+function sculpt(bld, f, z0, z1, NZ, NA, cyF, xf, o) {
+  const secs = [], RMAX = 0.42, STEP = 0.007;
+  for (let i = 0; i <= NZ; i++) {
+    const u = i / NZ, z = z0 + (z1 - z0) * (0.55 * u + 0.45 * (0.5 - 0.5 * Math.cos(Math.PI * u)));
+    let cy = cyF(z);
+    if (f(0, cy, z) > -0.003) { cy = null; for (let c = -0.22; c <= 0.22; c += 0.01) if (f(0, c, z) < -0.003) { cy = c; break; } }
+    if (cy === null) continue;
+    const ring = [];
+    for (let j = 0; j < NA; j++) {
+      const a = j / NA * Math.PI * 2, dx = Math.sin(a), dy = Math.cos(a);
+      let last = 0, inside = true;
+      for (let r = STEP; r < RMAX; r += STEP) {
+        const now = f(dx * r, cy + dy * r, z) < 0;
+        if (inside && !now) last = r;
+        inside = now;
+      }
+      let r0 = last - STEP, r1 = last;
+      for (let it = 0; it < 14; it++) { const m = (r0 + r1) / 2; if (f(dx * m, cy + dy * m, z) < 0) r0 = m; else r1 = m; }
+      ring.push(v3(dx * r1, cy + dy * r1, z));
+    }
+    secs.push({ z, cy, ring });
+  }
+  // pôles : sortie le long de l'axe au-delà des tranches extrêmes
+  const pole = (s, sg) => {
+    let a = 0, b = 0.08;
+    for (let it = 0; it < 20; it++) { const m = (a + b) / 2; if (f(0, s.cy, s.z + sg * m) < 0) a = m; else b = m; }
+    return v3(0, s.cy, s.z + sg * b);
+  };
+  const P0 = pole(secs[0], -1), P1 = pole(secs[secs.length - 1], 1);
+  const pts = [], vtx = l => {
+    const n = sdGrad(f, l.x, l.y, l.z, new V3()), p = xf(l.x, l.y, l.z);
+    const c = new THREE.Color(); faceColor(o, p, n, c, true);
+    const v = { l, p, n, c, s: o.surf ? (typeof o.surf === 'function' ? o.surf(l, n) : o.surf) : SF.fur };
+    pts.push(v); return v;
+  };
+  const grid = secs.map(s => s.ring.map(vtx)), v0 = vtx(P0), v1 = vtx(P1);
+  const put = (A, Bv, Cv) => {
+    _e1.subVectors(Bv.p, A.p); _e2.subVectors(Cv.p, A.p); _fn.crossVectors(_e1, _e2);
+    if (_fn.lengthSq() < 1e-16) return;
+    _gn.copy(A.n).add(Bv.n).add(Cv.n);
+    if (_fn.dot(_gn) < 0) { const t = Bv; Bv = Cv; Cv = t; }
+    for (const V of [A, Bv, Cv]) { setW(o, V.p); bld.push(V.p, V.n, V.c, _w, V.s, null); }
+  };
+  sgNew(false);
+  for (let i = 0; i + 1 < grid.length; i++) for (let j = 0; j < NA; j++) {
+    const j1 = (j + 1) % NA, A = grid[i], Bq = grid[i + 1];
+    put(A[j], A[j1], Bq[j1]); put(A[j], Bq[j1], Bq[j]);
+  }
+  for (let j = 0; j < NA; j++) { const j1 = (j + 1) % NA; put(v0, grid[0][j1], grid[0][j]); put(v1, grid[grid.length - 1][j], grid[grid.length - 1][j1]); }
+  return { pts, w: o.w };
+}
+
+// orbites : axes (long : coin externe relevé et reculé, haut, profondeur) par côté
+const EYE_C = [0.113, 0.07, 0.205];
+const EA = SIDES.map(s => {
+  const L = v3(s * 0.8, 0.4, -0.45).normalize(), N0 = v3(s * 0.62, 0.22, 0.76);
+  const N = N0.addScaledVector(L, -N0.dot(L)).normalize(), H = new V3().crossVectors(N, L).multiplyScalar(s).normalize();
+  return { L, H, N, a: [L.x, L.y, L.z, H.x, H.y, H.z, N.x, N.y, N.z] };
+});
+const BROW_A = [0.03, 0.098, 0.212], BROW_B = [0.168, 0.152, 0.11];
+const muzT = z => clamp((z - 0.1) / 0.33, 0, 1);
+const muzHW = t => lerp(0.13, 0.068, Math.pow(t, 0.8)), muzTop = t => lerp(0.086, 0.042, t), muzBot = t => lerp(-0.13, -0.098, t);
+function noseF(x, y, z) {
+  const ny = y - 0.024, wN = 0.046 + 0.25 * clamp(ny, -0.03, 0.03);
+  let d = smax(sdRR(x, ny, wN, 0.03, 0.015), Math.abs(z - 0.418 - 0.25 * Math.max(0, ny)) - 0.03, 0.018); // coin : le dessus avance en surplomb
+  return smax(d, -sdE(x, y + 0.004, z - 0.452, 0.006, 0.022, 0.012), 0.006); // sillon sous la truffe
+}
+function eyeF(x, y, z) {
+  const e = EA[x < 0 ? 1 : 0].a, ex = x - (x < 0 ? -EYE_C[0] : EYE_C[0]), ey = y - EYE_C[1], ez = z - EYE_C[2];
+  return sdE(ex * e[0] + ey * e[1] + ez * e[2], ex * e[3] + ey * e[4] + ez * e[5], ex * e[6] + ey * e[7] + ez * e[8], 0.05, 0.021, 0.034);
+}
+function headF(x, y, z) {
+  const ax = Math.abs(x);
+  // crâne large et lourd
+  let d = sdE(x, y - 0.045, z + 0.03, 0.195, 0.165, 0.205);
+  // joues pleines / base de la collerette sous les oreilles (la mâchoire s'élargit vers l'arrière)
+  d = smin(d, sdE(ax - 0.105, y + 0.06, z - 0.0, 0.1, 0.1, 0.12), 0.07);
+  // museau : bloc effilé, dessus plat, flancs droits, avant carré
+  const t = muzT(z), top = muzTop(t), bot = muzBot(t);
+  // section en trapèze : chanfrein étroit, flancs qui s'évasent jusqu'aux babines (qui pendent un peu)
+  const yr = clamp((y - bot) / (top - bot), 0, 1), fl = 0.012 * ss(0.5, 0.05, yr) * ss(0.0, 0.3, t);
+  let dm = sdRR(x / lerp(1, 0.74, yr), y - (top + bot) * 0.5, muzHW(t) + fl, (top - bot) * 0.5, lerp(0.05, 0.042, t));
+  dm = smax(dm, z - (0.432 - 2.6 * x * x - 0.25 * Math.max(0, y - 0.0) ** 2 * 10), 0.035);
+  d = smin(d, dm, 0.065);
+  // arcade sourcilière fondue dans le crâne : V froncé (bouts intérieurs plus bas, plus avancés)
+  d = smin(d, sdCap(ax, y, z, BROW_A, BROW_B, 0.037), 0.055);
+  // pommettes
+  d = smin(d, sdE(ax - 0.138, y + 0.008, z - 0.112, 0.055, 0.04, 0.08), 0.045);
+  // truffe en coin, nette (petit rayon de raccord : pli franc autour)
+  d = smin(d, noseF(x, y, z), 0.01);
+  // orbites en amande, profondes et bridées, sous l'arcade
+  d = smax(d, -eyeF(x, y, z), 0.018);
+  // rides du rictus sur le chanfrein
+  if (z > 0.2 && z < 0.34 && y > 0.0) d += 0.004 * ss(0.2, 0.235, z) * ss(0.34, 0.3, z) * ss(0.1, 0.035, ax) * ss(0.0, 0.04, y) * Math.sin((z - 0.2) * 160);
+  return d;
+}
+// mâchoire (repère de l'articulation JJ, mêmes unités) : bloc effilé, auge creusée (langue), bords épais, menton
+const jawT = z => clamp((z + 0.04) / 0.4, 0, 1), jawHW = t => lerp(0.098, 0.058, t);
+function jawF(x, y, z) {
+  const t = jawT(z), hw = jawHW(t), top = -0.004, bot = lerp(-0.125, -0.072, t);
+  let d = sdRR(x, y - (top + bot) * 0.5, hw, (top - bot) * 0.5, lerp(0.045, 0.03, t));
+  d = smax(d, z - (0.36 - 1.2 * x * x), 0.04);
+  d = smax(d, -0.08 - z, 0.03);
+  const dt = smax(sdRR(x, y - 0.03, hw - 0.02, 0.052, 0.018), z - (0.325 - 1.2 * x * x), 0.02);
+  d = smax(d, -dt, 0.01);
+  return smin(d, sdE(x, y + 0.074, z - 0.28, 0.048, 0.032, 0.06), 0.03); // menton
+}
+const _hl = new V3(), _jl = new V3();
+const toH = p => _hl.copy(p).sub(HJ).divideScalar(HS), toJ = p => _jl.copy(p).sub(JJ).divideScalar(HS);
+const NOSE_SF = [0.38, 0, 0, 0]; // truffe humide : reflet net
+const headCol = (c, n, out) => {
+  const l = toH(c), ax = Math.abs(l.x), t = muzT(l.z), bot = muzBot(t), hw = muzHW(t);
+  if (noseF(l.x, l.y, l.z) < 0.004) { out.copy(C.nose).lerp(C.skinG, 0.35 * ss(0.4, 0.95, n.y)); return; }
+  // babine : liseré noir net jusqu'à la commissure, gencive rouge dessous, palais sombre
+  const lip = bot + 0.017 + 0.01 * ss(0.36, 0.43, l.z);
+  if (l.z > 0.05 && l.y < lip) {
+    if (n.y < -0.45 && l.z > 0.08) out.copy(C.gum).multiplyScalar(ax > hw - 0.032 ? 0.75 : 0.32);
+    else out.copy(C.skin);
+    return;
+  }
+  // fourrure : dessus du crâne sombre, chanfrein qui s'éclaircit vers la truffe, flancs du museau clairs, joues ardoise
+  if (l.z > 0.2 && n.y > 0.45) out.copy(C.furM).lerp(C.furW, 0.15 + 0.5 * ss(0.24, 0.4, l.z));
+  else if (l.z > 0.14) out.copy(C.furB).lerp(C.furW, 0.25 + 0.45 * ss(0.02, -0.08, l.y) + 0.2 * ss(0.28, 0.42, l.z));
+  else out.copy(C.furM).lerp(C.furD, ss(0.0, 0.8, n.y - n.z) * 0.8).lerp(C.furB, 0.4 * ss(0.05, 0.18, ax) * ss(0.1, -0.1, l.y));
+  // arête de l'arcade qui accroche la lumière, creux de l'orbite dans l'ombre
+  const br = sdCap(ax, l.y, l.z, BROW_A, BROW_B, 0.037);
+  if (br < 0.012 && n.y > 0.2) out.lerp(C.furW, 0.25 * ss(0.012, 0.0, br));
+  const eo = eyeF(l.x, l.y, l.z);
+  if (eo < 0.03) out.lerp(C.skin, 0.85 * ss(0.03, 0.002, eo));
 };
-// museau raccourci (bout à z 0,47) et plus haut à l'avant : profil puissant et carré, pas une pointe
-loftZ(core, [[0.12, -0.15, 0.1, 0.14, 0.155, 0.105], [0.21, -0.144, 0.088, 0.132, 0.142, 0.092], [0.3, -0.135, 0.076, 0.12, 0.126, 0.08],
-  [0.38, -0.124, 0.066, 0.104, 0.108, 0.07], [0.435, -0.112, 0.056, 0.088, 0.09, 0.058]], [0, -0.03, 0.47], hp, { w: 'head', color: muzCol, jitter: 0.05, tint: 0.06 });
-const muzzle = vol(hp(0, -0.03, 0.3), hr(0.13, 0.12, 0.18), null, 'head');
-HEADV.push(muzzle);
-// rides du rictus : 2-3 bourrelets de fourrure sur le chanfrein, séparés par des plis à peine plus sombres (pas de noir)
-const bridgeY = z => lerp(0.088, 0.064, ss(0.21, 0.4, z));
-const creaseC = C.furD.clone().lerp(C.furM, 0.35);
-for (let k = 0; k < 3; k++) {
-  const z = 0.235 + k * 0.042, y = bridgeY(z);
-  ellip(core, hp(0, y + 0.002, z), hr(0.074 - k * 0.012, 0.014, 0.017), qE(0.12, 0, 0), { w: 'head', color: k === 1 ? C.furB : C.furM, detail: 1, jitter: 0.04, tint: false, vol: false });
-  if (k < 2) ellip(core, hp(0, y + 0.004, z + 0.021), hr(0.064 - k * 0.012, 0.009, 0.006), null, { w: 'head', color: creaseC, detail: 1, jitter: 0, tint: false, vol: false });
-  for (const s of SIDES) if (k < 2) {
-    ellip(core, hp(s * (0.088 - k * 0.01), y - 0.03, z + 0.006), hr(0.014, 0.036, 0.014), qE(0, 0, s * 0.6), { w: 'head', color: C.furM, detail: 1, jitter: 0.04, tint: false, vol: false });
-    ellip(core, hp(s * (0.097 - k * 0.01), y - 0.032, z + 0.022), hr(0.006, 0.032, 0.006), qE(0, 0, s * 0.6), { w: 'head', color: creaseC, detail: 0, jitter: 0, tint: false, vol: false });
+const jawCol = (c, n, out) => {
+  const l = toJ(c), ax = Math.abs(l.x), hw = jawHW(jawT(l.z));
+  if (l.y > -0.03 && n.y > 0.3) {
+    if (ax < hw - 0.024 && l.z < 0.31) out.copy(C.tongue).multiplyScalar(0.55 - 0.25 * ss(0.2, 0.0, l.z)); // langue, plus sombre vers la gorge
+    else out.copy(C.gum).multiplyScalar(0.7);
+  } else if (l.y > -0.028) out.copy(C.skin); // babine inférieure noire
+  else out.copy(C.furB).lerp(C.furL, 0.3 + 0.5 * ss(0.1, -0.7, n.y)).lerp(C.furW, 0.25 * ss(0.2, 0.34, l.z));
+};
+const headS = sculpt(core, headF, -0.25, 0.47, 84, 56, z => (z < 0.12 ? 0.04 : z < 0.4 ? -0.02 : 0.022), hp,
+  { w: 'head', color: headCol, jitter: 0.05, tint: 0.08, surf: (l, n) => (noseF(l.x, l.y, l.z) < 0.004 ? NOSE_SF : l.y < muzBot(muzT(l.z)) + 0.03 && l.z > 0.05 ? SF.skin : SF.fur) });
+const jawS = sculpt(core, jawF, -0.1, 0.4, 46, 40, () => -0.06, jp,
+  { w: 'jaw', color: jawCol, jitter: 0.05, tint: 0.05, surf: (l, n) => (l.y > -0.035 ? SF.gum : SF.fur) });
+// volumes invisibles (occlusion de la fourrure du cou, entre autres)
+const cran = vol(hp(0, 0.045, -0.03), hr(0.195, 0.165, 0.205), null, 'head');
+const muzzle = vol(hp(0, -0.02, 0.3), hr(0.12, 0.1, 0.17), null, 'head');
+HEADV.push(cran, muzzle);
+for (const s of SIDES) HEADV.push(vol(hp(s * 0.105, -0.06, 0.0), hr(0.1, 0.1, 0.12), null, 'head'));
+const jawV = vol(jp(0, -0.06, 0.16), hr(0.09, 0.06, 0.21), null, 'jaw');
+// gorge : membrane sombre entre palais et mâchoire (étirée quand la gueule s'ouvre), ferme le fond de la gueule
+ellip(core, hp(0, -0.12, 0.1), hr(0.08, 0.055, 0.15), null, {
+  w: (p, w) => { const t = ss(-0.1, -0.15, toH(p).y); w[0] = I('head'); w[1] = I('jaw'); w[2] = 1 - t; w[3] = t; },
+  color: C.gum.clone().multiplyScalar(0.18), surf: SF.gum, detail: 2, bump: 0, jitter: 0.05, tint: false, vol: false,
+});
+// narines : fentes en virgule sur l'avant de la truffe
+for (const s of SIDES) {
+  const np = onSurf(noseF, v3(s * 0.026, 0.014, 0.49));
+  ellip(core, hp(np.x, np.y, np.z - 0.002), hr(0.015, 0.0055, 0.006), qE(0.25, 0, s * 0.55), { w: 'head', color: col(0x010101), surf: NOSE_SF, detail: 1, bump: 0, vol: false, jitter: 0, tint: false });
+}
+// yeux : amande émissive au fond de l'orbite (halo positionné en sortie d'orbite)
+const EYE_P = SIDES.map((s, i) => {
+  const e = EA[i], c = v3(s * EYE_C[0], EYE_C[1], EYE_C[2]);
+  const o = c.clone().addScaledVector(e.N, 0.06);
+  let a = 0, b = 0.1; // descend le long de -N jusqu'au fond de l'orbite
+  for (let it = 0; it < 22; it++) { const m = (a + b) / 2, q = o.clone().addScaledVector(e.N, -m); if (headF(q.x, q.y, q.z) > 0) a = m; else b = m; }
+  const bottom = o.clone().addScaledVector(e.N, -b);
+  const q = new Quat().setFromRotationMatrix(_mb.makeBasis(e.L, e.H, new V3().crossVectors(e.L, e.H)));
+  ellip(core, hp(bottom.x, bottom.y, bottom.z).addScaledVector(e.N, -0.004 * HS), hr(0.036, 0.0095, 0.009), q, { w: 'head', color: C.eye, surf: SF.eye, detail: 2, bump: 0, jitter: 0, tint: false, vol: false });
+  return { p: bottom, N: e.N };
+});
+// longs crocs supérieurs, prémolaires, incisives (sous la babine)
+for (const s of SIDES) {
+  blade(core, hp(s * 0.054, -0.096, 0.378), v3(0, -1, 0.1), v3(0, 0, -1), 0.15 * HS, 0.026 * HS, Object.assign({ w: 'head', bend: 0.16, segs: 4 }, tooth));
+  for (let t = 0; t < 4; t++) {
+    const z = 0.335 - t * 0.05, hw = muzHW(muzT(z));
+    blade(core, hp(s * (hw - 0.02), muzBot(muzT(z)) + 0.008, z), v3(0, -1, 0), v3(0, 0, 1), (0.05 - t * 0.004) * HS, 0.016 * HS, Object.assign({ w: 'head', bend: 0.1, segs: 2 }, tooth));
   }
 }
-// truffe : large coin aplati, incliné vers l'avant, satinée (pas une bille vernie) ; narines fendues
-const NOSE_SF = [0.72, 0, 0, 0];
-ellip(core, hp(0, -0.002, 0.452), hr(0.07, 0.03, 0.044), qE(0.42, 0, 0), { w: 'head', color: C.nose, surf: NOSE_SF, detail: 2, jitter: 0.04, tint: false, vol: false });
-ellip(core, hp(0, 0.018, 0.428), hr(0.056, 0.02, 0.04), qE(0.22, 0, 0), { w: 'head', color: C.nose, surf: NOSE_SF, detail: 1, jitter: 0.04, tint: false, vol: false });
+for (let t = 0; t < 4; t++) blade(core, hp((t - 1.5) * 0.019, -0.094, 0.414), v3(0, -1, 0.1), v3(0, 0, -1), 0.042 * HS, 0.01 * HS, Object.assign({ w: 'head', segs: 2 }, tooth));
+// crocs et dents inférieurs, plantés dans le bord de l'auge
 for (const s of SIDES) {
-  ellip(core, hp(s * 0.03, -0.01, 0.488), hr(0.017, 0.008, 0.01), qE(0, 0, s * 0.5), { w: 'head', color: col(0x020102), surf: NOSE_SF, detail: 1, vol: false, jitter: 0 }); // narines
-  // orbites profondes sous l'arcade (l'œil brille dans l'ombre), fente d'œil fine et très bridée
-  ellip(core, hp(s * 0.1, 0.056, 0.226), hr(0.07, 0.034, 0.036), qE(0, s * 0.5, s * 0.55), { w: 'head', color: C.skin, surf: SF.skin, detail: 1, vol: false });
-  ellip(core, hp(s * 0.104, 0.058, 0.243), hr(0.04, 0.008, 0.016), qE(0, s * 0.5, s * 0.68), { w: 'head', color: C.eye, surf: SF.eye, detail: 1, jitter: 0, vol: false });
-  // babine retroussée : liseré noir net, gencive sombre et fine dessous, au-dessus des crocs
-  ellip(core, hp(s * 0.093, -0.1, 0.33), hr(0.013, 0.011, 0.11), qE(0.06, -s * 0.18, 0), { w: 'head', color: C.skin, surf: SF.skin, detail: 1, vol: false, jitter: 0 });
-  ellip(core, hp(s * 0.086, -0.113, 0.34), hr(0.014, 0.011, 0.09), qE(0, -s * 0.18, 0), { w: 'head', color: C.gum.clone().multiplyScalar(0.6), surf: SF.gum, detail: 1, vol: false, jitter: 0.08 });
-  // longs crocs supérieurs, prémolaires
-  blade(core, hp(s * 0.066, -0.11, 0.405), v3(0, -1, 0.1), v3(0, 0, -1), 0.15 * HS, 0.026 * HS, Object.assign({ w: 'head', bend: 0.16, segs: 4 }, tooth));
-  for (let t = 0; t < 4; t++) blade(core, hp(s * (0.088 - t * 0.002), -0.12, 0.36 - t * 0.05), v3(0, -1, 0), v3(0, 0, 1), 0.05 * HS, 0.016 * HS, Object.assign({ w: 'head', bend: 0.1, segs: 2 }, tooth));
-}
-for (let t = 0; t < 4; t++) blade(core, hp((t - 1.5) * 0.022, -0.104, 0.445), v3(0, -1, 0.1), v3(0, 0, -1), 0.04 * HS, 0.01 * HS, Object.assign({ w: 'head', segs: 2 }, tooth));
-ellip(core, hp(0, -0.11, 0.3), hr(0.075, 0.018, 0.15), null, { w: 'head', color: C.gum.clone().multiplyScalar(0.5), surf: SF.gum, detail: 1, vol: false, jitter: 0.1 }); // palais
-// mâchoire lourde et profonde : menton clair, gencive et langue
-loftZ(core, [[0.0, -0.12, 0.0, 0.1, 0.112, 0.098], [0.13, -0.128, -0.004, 0.098, 0.106, 0.09], [0.24, -0.118, -0.01, 0.086, 0.09, 0.078],
-  [0.33, -0.1, -0.014, 0.07, 0.072, 0.062]], [0, -0.05, 0.38], jp, {
-  w: 'jaw', jitter: 0.05, tint: 0.05, color: (c, n, out) => {
-    if (n.y > 0.6) out.copy(C.gum).multiplyScalar(0.45); else if (n.y > 0.15) out.copy(C.skin);
-    else out.copy(C.furB).lerp(C.furL, 0.35 + 0.5 * ss(0.1, -0.7, n.y));
-  },
-});
-const jawV = vol(jp(0, -0.06, 0.18), hr(0.1, 0.07, 0.22), null, 'jaw');
-ellip(core, jp(0, -0.006, 0.2), hr(0.07, 0.018, 0.15), null, { w: 'jaw', color: C.gum.clone().multiplyScalar(0.55), surf: SF.gum, detail: 1, vol: false });
-ellip(core, jp(0, 0.006, 0.18), hr(0.054, 0.016, 0.14), null, { w: 'jaw', color: C.tongue.clone().multiplyScalar(0.7), surf: SF.gum, detail: 1, vol: false });
-for (const s of SIDES) {
-  ellip(core, jp(s * 0.069, -0.004, 0.24), hr(0.014, 0.012, 0.11), qE(0, -s * 0.12, 0), { w: 'jaw', color: C.gum.clone().multiplyScalar(0.55), surf: SF.gum, detail: 1, vol: false, jitter: 0.12 }); // gencive inférieure
-  ellip(core, jp(s * 0.077, -0.016, 0.22), hr(0.01, 0.01, 0.13), qE(0, -s * 0.12, 0), { w: 'jaw', color: C.skin, surf: SF.skin, detail: 1, vol: false, jitter: 0 }); // babine inférieure noire
-  blade(core, jp(s * 0.055, -0.01, 0.315), v3(0, 1, 0.06), v3(0, 0, -1), 0.11 * HS, 0.022 * HS, Object.assign({ w: 'jaw', bend: 0.12, segs: 3 }, tooth));
-  for (let t = 0; t < 3; t++) blade(core, jp(s * 0.067, -0.005, 0.26 - t * 0.06), v3(0, 1, 0), v3(0, 0, 1), 0.04 * HS, 0.014 * HS, Object.assign({ w: 'jaw', segs: 2 }, tooth));
+  blade(core, jp(s * 0.047, -0.012, 0.29), v3(0, 1, 0.06), v3(0, 0, -1), 0.11 * HS, 0.022 * HS, Object.assign({ w: 'jaw', bend: 0.12, segs: 3 }, tooth));
+  for (let t = 0; t < 3; t++) { const z = 0.235 - t * 0.06; blade(core, jp(s * (jawHW(jawT(z)) - 0.012), -0.008, z), v3(0, 1, 0), v3(0, 0, 1), 0.04 * HS, 0.014 * HS, Object.assign({ w: 'jaw', segs: 2 }, tooth)); }
 }
 /* Oreilles : grandes (~0,85 m), épaisses, rejetées en arrière et vers le haut, bien visibles au-dessus du crâne ;
  * coque en gouttière (face interne creusée sombre, bord intérieur rouge qui accroche la lumière, dos bombé couvert de
@@ -889,26 +1067,55 @@ const maneR = cmix(C.furD, C.furM, 0.3), maneT = (p, n, out) => out.copy(C.furM)
 const lightR = cst(C.furL), lightT = cst(C.furP);
 const darkR = cst(C.furD), midT = cmix(C.furN, C.furB, 0.5);
 const awayFromEars = p => p.distanceTo(J('earL')) > 0.11 * HS && p.distanceTo(J('earR')) > 0.11 * HS;
-fur(core, cran, 18, {
-  filter: (p, n) => n.y > -0.1 && p.z < HJ.z + 0.06 && awayFromEars(p), flow: (p, n, d) => d.set(p.x * 1.2, 0.15, -1),
-  len: [0.16, 0.26], wid: [0.07, 0.1], lift: 0.22, cR: maneR, cT: maneT, raise: 0.8,
+// touffes plantées dans la surface sculptée (elles poussent des joues, de la mâchoire, du crâne : rien ne flotte)
+const HL = p => toH(p);
+fur(core, headS, 16, { // crâne : mèches couchées vers la crinière, entre les oreilles
+  occl: false, filter: (p, n) => { const l = HL(p); return n.y > 0.1 && l.z < 0.1 && l.z > -0.2 && awayFromEars(p); }, flow: (p, n, d) => d.set(p.x * 1.2, 0.1, -1),
+  len: [0.16, 0.26], wid: [0.07, 0.1], lift: 0.2, cR: maneR, cT: maneT, raise: 0.8,
 });
 const ruffT = (p, n, out) => out.copy(C.furM).lerp(C.furB, 0.4 + 0.4 * rnd());
 for (const s of SIDES) {
-  // grande collerette en éventail, en deux rangs étagés : joues (court), puis base derrière la mâchoire (long, rejeté en arrière)
-  fur(core, cheek[s], 14, {
-    filter: (p, n) => n.x * s > 0.25 && n.z < 0.7, flow: (p, n, d) => d.set(s * 1.0, -0.3, -0.6),
-    len: [0.2, 0.3], wid: [0.07, 0.1], lift: 0.24, cR: cmix(C.furD, C.furM, 0.6), cT: cmix(C.furM, C.furB, 0.6), raise: 0.6, clump: 2, mid: 0.6,
+  // joues : touffes qui sortent de la pommette et du bas de joue, rejetées en arrière et en dehors (deux rangs étagés)
+  fur(core, headS, 16, {
+    occl: false, filter: (p, n) => { const l = HL(p); return n.x * s > 0.35 && l.z > -0.02 && l.z < 0.15 && l.y < 0.03 && l.y > -0.17; },
+    flow: (p, n, d) => d.set(s * 0.9, -0.28, -0.75), len: [0.16, 0.24], wid: [0.05, 0.07], lift: 0.18,
+    cR: cmix(C.furD, C.furM, 0.6), cT: (p, n, out) => out.copy(C.furM).lerp(rnd() < 0.3 ? C.furW : C.furB, 0.5), raise: 0.6, clump: 2, mid: 0.6,
   });
-  fur(core, ruff[s], 24, {
-    filter: (p, n) => n.x * s > 0.05 && n.z < 0.8, flow: (p, n, d) => d.set(s * 1.0, -0.15 - 0.5 * ss(0.0, -0.8, n.y), -0.8),
-    len: [0.3, 0.46], wid: [0.08, 0.11], lift: 0.32, cR: cmix(C.furD, C.furM, 0.4), cT: ruffT, raise: 0.7, clump: 2, occLim: 0.9, mid: 0.58,
+  // collerette : longues mèches derrière la mâchoire, en éventail vers l'arrière et le bas
+  fur(core, headS, 22, {
+    occl: false, filter: (p, n) => { const l = HL(p); return n.x * s > 0.15 && l.z < 0.03 && l.z > -0.2 && l.y < 0.02; },
+    flow: (p, n, d) => d.set(s * 1.0, -0.15 - 0.5 * ss(0.0, -0.8, n.y), -0.8), len: [0.28, 0.42], wid: [0.065, 0.09], lift: 0.26,
+    cR: cmix(C.furD, C.furM, 0.4), cT: ruffT, raise: 0.7, clump: 2, mid: 0.58,
+  });
+  // bout de l'arcade : courtes mèches hérissées vers le haut et l'arrière (sourcils froncés)
+  fur(core, headS, 3, {
+    occl: false, filter: (p, n) => { const l = HL(p); return Math.abs(l.x) > 0.12 && l.x * s > 0 && l.y > 0.11 && l.z > 0.08 && l.z < 0.17 && n.y > 0.2; },
+    flow: (p, n, d) => d.set(s * 0.7, 0.45, -1), len: [0.08, 0.12], wid: [0.03, 0.04], lift: 0.3, cR: cst(C.furM), cT: cmix(C.furB, C.furW, 0.3), raise: 0.4, clump: 1,
   });
 }
-fur(core, jawV, 12, { // barbiche : menton clair
-  filter: (p, n) => n.y < -0.35 && p.z < JJ.z + 0.3, flow: (p, n, d) => d.set(0, -1, -0.5),
-  len: [0.13, 0.2], wid: [0.045, 0.065], lift: 0.18, cR: cmix(C.furB, C.furL, 0.5), cT: lightT, raise: 0.3,
+fur(core, jawS, 12, { // barbiche : sous le menton et la mâchoire, vers le bas et l'arrière
+  occl: false, filter: (p, n) => n.y < -0.4 && toJ(p).z < 0.28, flow: (p, n, d) => d.set(0, -1, -0.5),
+  len: [0.12, 0.19], wid: [0.045, 0.065], lift: 0.18, cR: cmix(C.furB, C.furL, 0.5), cT: lightT, raise: 0.3,
 });
+// balafre de l'arcade droite, peinte au ras de la surface (projetée sur la sculpture)
+{
+  const curve = new THREE.CatmullRomCurve3([v3(-0.05, 0.17, 0.12), v3(-0.09, 0.15, 0.17), v3(-0.135, 0.11, 0.19)]);
+  const N = 10, P = [], Nn = [];
+  for (let i = 0; i <= N; i++) { const l = onSurf(headF, curve.getPointAt(i / N)); P.push(l); Nn.push(sdGrad(headF, l.x, l.y, l.z, new V3())); }
+  setW({ w: 'head' }, HJ);
+  const cS = C.scar.clone().multiplyScalar(0.38), q = [new V3(), new V3(), new V3(), new V3()];
+  for (let i = 0; i < N; i++) {
+    for (let k = 0; k < 2; k++) {
+      const j = i + k, tg = P[Math.min(N, j + 1)].clone().sub(P[Math.max(0, j - 1)]).normalize();
+      const sd = new V3().crossVectors(tg, Nn[j]).normalize().multiplyScalar(0.0055 * Math.sin(Math.PI * (0.08 + 0.84 * j / N)));
+      const a = P[j].clone().addScaledVector(Nn[j], 0.002);
+      q[k * 2].copy(hp(a.x + sd.x, a.y + sd.y, a.z + sd.z)); q[k * 2 + 1].copy(hp(a.x - sd.x, a.y - sd.y, a.z - sd.z));
+    }
+    _ref.copy(hp(P[i].x, P[i].y, P[i].z)).addScaledVector(Nn[i], -0.05);
+    triO(core, q[0], q[1], q[3], cS, cS, cS, null, null, null, _ref, SF.skin);
+    triO(core, q[0], q[3], q[2], cS, cS, cS, null, null, null, _ref, SF.skin);
+  }
+}
 
 /* =====================================================================================
  * Fourrure du corps
@@ -926,6 +1133,10 @@ fur(core, humpV, 78, {
   filter: (p, n) => n.y > -0.3 && p.z < 0.3 && tankDist(p) > 0.3 && clearBack(p), flow: (p, n, d) => d.set(p.x * 1.2, -0.35, -1),
   len: [0.3, 0.46], wid: [0.11, 0.15], lift: 0.14, cR: maneR, cT: maneT, raise: 1, clump: 2,
   lenFn: p => 0.8 + 0.2 * ss(1.95, 2.55, p.y),
+});
+fur(core, napeV, 26, { // crinière du garrot : longues mèches rejetées en arrière, par-dessus la bosse
+  filter: (p, n) => n.y > -0.1 && tankDist(p) > 0.3, flow: (p, n, d) => d.set(p.x * 1.4, -0.2, -1),
+  len: [0.34, 0.5], wid: [0.1, 0.14], lift: 0.16, cR: maneR, cT: maneT, raise: 1, clump: 2,
 });
 fur(core, neckV, 40, {
   filter: (p, n) => n.y > -0.45, flow: (p, n, d) => d.set(p.x * 1.3, -0.05, -1),
@@ -1268,9 +1479,7 @@ function flap(top, down, across, out, wTop, wBot, len, rows, o) {
 /* ---------- Cicatrices rouges (griffures) : front et arcade droite, poitrail gauche, dos ---------- */
 const SCAR = { color: C.scar, surf: SF.skin, density: 60, taper: true };
 {
-  const org = () => hp(0, 0.0, 0.05);
   // une seule balafre courte, enfoncée dans la fourrure de l'arcade droite (plus de bandes flottantes au-dessus du front)
-  strap([hp(-0.08, 0.16, 0.16), hp(-0.1, 0.13, 0.185), hp(-0.12, 0.105, 0.2)], 0.012 * HS, 0.002, Object.assign({ set: HEADV, org }, SCAR, { color: C.scar.clone().multiplyScalar(0.7) }));
   for (let i = 0; i < 3; i++) {
     const o = i * 0.06;
     strap([v3(0.12 + o, 2.28 - o * 0.3, 0.5), v3(0.22 + o, 2.12 - o * 0.3, 0.5), v3(0.3 + o, 1.96 - o * 0.3, 0.46)], 0.03, 0.012, SCAR);
@@ -1367,9 +1576,9 @@ float frs = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
 float fr3 = frs * frs * frs;
 vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 float upK = clamp(dot(normal, upV) * 0.5 + 0.55, 0.0, 1.0);
-totalEmissiveRadiance += uRim * diffuseColor.rgb * fr3 * upK * (1.0 - vRM.y * 0.5) * (1.0 - 0.7 * wwCard);
+totalEmissiveRadiance += uRim * diffuseColor.rgb * fr3 * upK * (1.0 - vRM.y * 0.5) * (1.0 - 0.85 * wwCard);
 // liseré de Fresnel froid indépendant de l'albédo : la silhouette se détache du fond sombre (sang en traque)
-totalEmissiveRadiance += uRim2 * (fr3 * frs) * (0.35 + 0.65 * upK) * (1.0 - vRM.y * 0.7) * (1.0 - 0.6 * wwCard);
+totalEmissiveRadiance += uRim2 * (fr3 * frs) * (0.35 + 0.65 * upK) * (1.0 - vRM.y * 0.7) * (1.0 - 0.9 * wwCard);
 // lumière d'appoint propre au personnage (la ruelle l'éclaire surtout à contre-jour) : garde lisibles le bleu
 // ardoise de la fourrure, le gris-bleu du masque et le bronze, plus fort sur les faces tournées vers le haut
 totalEmissiveRadiance += diffuseColor.rgb * uFill * (0.35 + 0.65 * upK);
@@ -1380,10 +1589,18 @@ totalEmissiveRadiance += diffuseColor.rgb * vRM.y * (0.04 + 0.4 * ek * ek * ek) 
 #if NUM_DIR_LIGHTS > 0
 // liseré de contre-jour : la clé de la scène (derrière lui) déborde sur la silhouette
 float rl = clamp(dot(normal, directionalLights[0].direction) + 0.55, 0.0, 1.0);
-totalEmissiveRadiance += directionalLights[0].color * diffuseColor.rgb * (fr3 * rl * uRimK) * (1.0 - 0.7 * wwCard);
-#endif`);
+totalEmissiveRadiance += directionalLights[0].color * diffuseColor.rgb * (fr3 * rl * uRimK) * (1.0 - 0.85 * wwCard);
+#endif`)
+    .replace('#include <tonemapping_fragment>', `// fourrure : jamais de magenta (contre-jour rouge × albédo bleu) : la teinte bascule franchement vers le rouge ou le bleu
+if (vOP.w > 0.5) {
+  vec3 wc = gl_FragColor.rgb;
+  float wm = min(wc.r, wc.b) - wc.g;
+  if (wm > 0.0) { if (wc.r > wc.b) wc.b -= wm * 0.75; else wc.r -= wm * 0.75; }
+  gl_FragColor.rgb = wc;
+}
+#include <tonemapping_fragment>`);
 };
-bodyMat.customProgramCacheKey = () => 'ww-warwick-body-v4';
+bodyMat.customProgramCacheKey = () => 'ww-warwick-body-v5';
 
 function concat(key, n) { const a = core[key], b = extra[key], out = new Float32Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; }
 const geo = new THREE.BufferGeometry();
@@ -1489,9 +1706,9 @@ const glowTex = (() => {
 })();
 const eyeMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff2020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false });
 // sortie de l'orbite (avant + extérieur) : les arcades et la collerette ne masquent plus le halo de trois quarts
-const eyeGlows = SIDES.map(s => {
-  const sp = new THREE.Sprite(eyeMat);
-  sp.position.copy(hp(s * 0.122, 0.062, 0.285)).sub(HJ); sp.scale.set(0.22, 0.1, 1); sp.renderOrder = 4;
+const eyeGlows = SIDES.map((s, i) => {
+  const sp = new THREE.Sprite(eyeMat), e = EYE_P[i], g = e.p.clone().addScaledVector(e.N, 0.07);
+  sp.position.copy(hp(g.x, g.y, g.z)).sub(HJ); sp.scale.set(0.22, 0.1, 1); sp.renderOrder = 4;
   B.head.add(sp); return sp;
 });
 
@@ -1500,7 +1717,7 @@ const droolMat = new THREE.MeshBasicMaterial({ color: 0x66ff44, transparent: tru
 const drool = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), droolMat);
 drool.name = 'warwick-bave'; drool.visible = false; drool.frustumCulled = false; drool.renderOrder = 4;
 root.add(drool);
-const lipLocal = hp(0.085, -0.13, 0.4).sub(HJ);
+const lipLocal = hp(0.07, -0.12, 0.36).sub(HJ);
 const DR = { phase: 0, t0: 0, next: 7, vy: 0 };
 
 /* =====================================================================================
@@ -1945,7 +2162,7 @@ function update(state) {
   eyeGlows[0].scale.set(0.22 * es * (1 + 0.15 * wL), 0.1 * es * (0.35 + 0.65 * blink) * (1 - 0.4 * wL), 1); eyeGlows[1].scale.copy(eyeGlows[0].scale);
   U.uRim.value.copy(RIM).multiplyScalar(0.22).lerp(_tmpC2.copy(blood).multiplyScalar(0.3), Hn);
   U.uRim2.value.copy(RIM).multiplyScalar(0.07).lerp(_tmpC2.copy(blood).multiplyScalar(0.1), Hn * 0.85);
-  U.uFill.value.copy(FILL).lerp(_tmpC2.copy(blood).multiplyScalar(0.16), Hn * 0.35).multiplyScalar(1 + au.bass * 0.15);
+  U.uFill.value.copy(FILL).lerp(_tmpC2.copy(blood).multiplyScalar(0.16), Hn * 0.2).multiplyScalar(1 + au.bass * 0.15);
   U.uBristle.value = clamp(Hn * 0.55 + H * 0.7 + G * 0.8 + swS * 0.4 + wL * 0.15 + R * 0.6, 0, 0.95 + 0.05 * (1 - wL));
   U.uRipple.value = 0.05 + Hn * 0.03;
   U.uTime.value = t % TWRAP;
