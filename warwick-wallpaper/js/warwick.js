@@ -132,10 +132,10 @@ const C = {
   clawB: col(0x0a0a0c), clawT: col(0x302e2c), clawE: col(0xa48c58),
   copper: col(0x5e4b2e), copperD: col(0x30271a), copperL: col(0x84704a), verdi: col(0x44624e), grime: col(0x15120c),
   leather: col(0x201d18), rubber: col(0x2c8a24), eye: col(0x5a0a08), liquid: col(0x2c6a1c),
-  cloth: col(0x2e2a1b), clothD: col(0x1c190e), clothL: col(0x48422d), earIn: col(0x84505e), earInD: col(0x301c26), earRed: col(0xb0262c), scar: col(0x8a1c22),
+  cloth: col(0x29251c), clothD: col(0x16130d), clothL: col(0x3a3427), earIn: col(0x5e3a46), earInD: col(0x1e1218), earRed: col(0xb0262c), scar: col(0x8a1c22),
 };
 const SF = {
-  fur: [0.9, 0, 0, 0], skin: [0.5, 0, 0, 0], nose: [0.48, 0, 0, 0], gum: [0.4, 0, 0, 0], tooth: [0.3, 0.05, 0, 0], claw: [0.72, 0.1, 0, 0],
+  fur: [0.9, 0, 0, 0], card: [0.93, 0, 0, 0], skin: [0.5, 0, 0, 0], nose: [0.48, 0, 0, 0], gum: [0.4, 0, 0, 0], tooth: [0.3, 0.05, 0, 0], claw: [0.72, 0.1, 0, 0],
   leather: [0.66, 0, 0, 0], rubber: [0.3, 0.05, 0.14, 0],
   copper: [0.5, 0.7, 0, 0], copperD: [0.62, 0.6, 0, 0], cloth: [0.96, 0, 0, 0],
   glow: [0.3, 0, 1, 0], vial: [0.22, 0, 1.25, 0], eye: [0.3, 0, 0, 1], tube: [0.15, 0.05, 0.42, 0], tubeCore: [0.2, 0, 1.05, 0],
@@ -282,7 +282,7 @@ function lock(bld, p, n, dir, len, wid, cR, cT, o) {
   RB[0].copy(_b0).addScaledVector(_sd, wid).addScaledVector(_up, -th * 0.35); RB[1].copy(_b0).addScaledVector(_up, th);
   RB[2].copy(_b0).addScaledVector(_sd, -wid).addScaledVector(_up, -th * 0.35);
   // touffe en feuille : corps large jusqu'aux deux tiers, pointe courte
-  const mw = o.mid != null ? o.mid : 0.86;
+  const mw = o.mid != null ? o.mid : 0.66; // effilée en pointe (plus de losanges)
   _m.copy(_b0).addScaledVector(dir, len * 0.58).addScaledVector(_up, arch);
   RM[0].copy(_m).addScaledVector(_sd, wid * mw).addScaledVector(_up, -th * 0.25); RM[1].copy(_m).addScaledVector(_up, th * 0.75);
   RM[2].copy(_m).addScaledVector(_sd, -wid * mw).addScaledVector(_up, -th * 0.25);
@@ -296,7 +296,7 @@ function lock(bld, p, n, dir, len, wid, cR, cT, o) {
   FXM[0] = _q2.x; FXM[1] = _q2.y; FXM[2] = _q2.z; FXM[3] = 0;
   _cMid.copy(cR).lerp(cT, 0.55);
   setW(o, p);
-  const s = o.surf || SF.fur;
+  const s = o.surf || SF.card; // SF.card : le shader plafonne liseré et contre-jour sur les mèches
   sgNew(true);
   for (let k = 0; k < 3; k++) {
     const k1 = k === 2 ? 0 : k + 1;
@@ -339,7 +339,7 @@ function fur(bld, v, count, o) {
       _pc.copy(_p).addScaledVector(_tg, off).addScaledVector(_d, -Math.abs(off) * 0.5 - (c === 0 ? 0 : wid0 * 0.6));
       _dc.copy(_d).addScaledVector(_tg, off * 0.5 + (rnd() - 0.5) * 0.05).addScaledVector(_nn, lf + rr(-0.04, 0.06)).normalize();
       const k = c === 0 ? 1 : rr(0.7, 0.88);
-      lock(bld, _pc, _nn, _dc, len0 * k, wid0 * (c === 0 ? 1 : 0.85), _cR, _cT, { w: o.w || v.w, raise: o.raise, arch: o.arch, curl: o.curl != null ? o.curl : -0.02, thick: o.thick || 0.36 });
+      lock(bld, _pc, _nn, _dc, len0 * k, wid0 * (c === 0 ? 1 : 0.85), _cR, _cT, { w: o.w || v.w, mid: o.mid, raise: o.raise, arch: o.arch, curl: o.curl != null ? o.curl : -0.02, thick: o.thick || 0.36 });
     }
     made++;
   }
@@ -444,6 +444,14 @@ function copperCol(base, amt) {
 }
 const COPPER = { color: copperCol(C.copper, 0.22), surf: SF.copper, jitter: 0.1, tint: false };
 const COPPERD = { color: copperCol(C.copperD, 0.25), surf: SF.copperD, jitter: 0.1, tint: false };
+// brassards : bronze plus sombre et plus encrassé (vert-brun dans les creux) : ce ne sont plus les surfaces les plus claires du cadre
+const GAUNT_C = C.copper.clone().lerp(C.copperD, 0.62), GAUNT_G = col(0x171c10);
+function gauntCol(base, amt) {
+  const f = copperCol(base, amt);
+  return (c, n, out) => { f(c, n, out); const g = hash3(c.x * 13.1, c.y * 13.1 + 2.2, c.z * 13.1); out.lerp(GAUNT_G, 0.22 + 0.4 * g * g + (n.y < 0.2 ? 0.18 : 0)); };
+}
+const GAUNT = { color: gauntCol(GAUNT_C, 0.3), surf: SF.copper, jitter: 0.12, tint: false };
+const GAUNTD = { color: gauntCol(C.copperD, 0.3), surf: SF.copperD, jitter: 0.12, tint: false };
 const LEATHER = { color: C.leather, surf: SF.leather, jitter: 0.12, tint: false };
 const wo = (o, w, extra) => Object.assign({}, o, { w }, extra || {});
 function cylAB(bld, a, b, r0, r1, seg, o, open) {
@@ -517,8 +525,10 @@ const backCol = shadeN(v3(0, -0.3, 1), 0.0, 0.9, C.furD, C.furM);
 // short : toile olive délavée, rapiécée (taches plus sombres / plus claires)
 const clothCol = (c, n, out) => {
   const r = hash3(c.x * 2.3, c.y * 2.3, c.z * 2.3);
-  out.copy(C.cloth).lerp(r < 0.3 ? C.clothD : C.clothL, r < 0.3 ? 0.5 : r > 0.85 ? 0.35 : 0);
-  if (n.y < -0.4) out.multiplyScalar(0.6);
+  const r2 = hash3(c.x * 7.9 + 1.3, c.y * 7.9, c.z * 7.9 - 2.1);
+  out.copy(C.cloth).lerp(r < 0.35 ? C.clothD : C.clothL, r < 0.35 ? 0.6 : r > 0.85 ? 0.3 : 0);
+  out.lerp(C.grime, 0.25 * r2 + (n.y < 0.1 ? 0.25 : 0)); // crasse, plis dans l'ombre
+  if (n.y < -0.4) out.multiplyScalar(0.55);
 };
 const BELT_Y = 1.53;
 const underBelt = (cA, y0) => (c, n, out) => { if (c.y < (y0 || BELT_Y)) clothCol(c, n, out); else cA(c, n, out); };
@@ -546,11 +556,11 @@ for (const s of SIDES) {
   TORSO.push(TRAP[s] = ellip(core, v3(s * 0.33, 2.33, 0.03), v3(0.33, 0.18, 0.26), qE(0, 0, -s * 0.42), { w: wLerp('spine2', 'clav' + SK(s), p => ss(0.3, 0.55, Math.abs(p.x))), color: backCol }));
 }
 const neckV = ellip(core, v3(0, 2.33, 0.38), v3(0.22, 0.23, 0.28), qE(-0.18, 0, 0), { w: wNeck, color: backCol });
-const throatV = ellip(core, v3(0, 2.2, 0.45), v3(0.17, 0.14, 0.2), qE(0.1, 0, 0), { w: wNeck, color: C.furL, tint: 0.1 });
+const throatV = ellip(core, v3(0, 2.2, 0.45), v3(0.17, 0.14, 0.2), qE(0.1, 0, 0), { w: wNeck, color: C.furM.clone().lerp(C.furW, 0.3), tint: 0.1 });
 TORSO.push(neckV, throatV);
 
 /* ---------- Bras ---------- */
-const ARMV = {}, CLAW_L = [0.45, 0.51, 0.47, 0.37], CLAW_BEND = 0.42;
+const ARMV = {}, CLAW_L = [0.45, 0.51, 0.47, 0.37], CLAW_BEND = 0.6;
 for (const s of SIDES) {
   const k = SK(s), SL = J('arm' + k), EL = J('fore' + k), WL = J('hand' + k), h = HAND[k];
   const ua = EL.clone().sub(SL), la = WL.clone().sub(EL), uaL = ua.length(), laL = la.length();
@@ -573,13 +583,13 @@ for (const s of SIDES) {
     ellip(core, kn.clone().addScaledVector(fd, 0.05), v3(0.036, 0.068, 0.036), quatAlong(fd, h.spread), { w: 'f' + k + f, color: C.skinG, detail: 1, vol: false });
     const cl = CLAW_L[f];
     // griffes-lames de bronze : base encrassée, fil poli
-    blade(core, kn.clone().addScaledVector(fd, 0.09), fd, h.palm.clone().multiplyScalar(0.75).add(v3(0, 0, 0.5)), cl, 0.05, { w: 'f' + k + f, bend: CLAW_BEND, segs: 7, thin: 0.34, c0: C.copperD, c1: C.clawE, surf: SF.copper });
+    blade(core, kn.clone().addScaledVector(fd, 0.09), fd, h.palm.clone().multiplyScalar(0.75).add(v3(0, 0, 0.5)), cl, 0.085, { w: 'f' + k + f, bend: CLAW_BEND, segs: 7, thin: 0.5, c0: C.copperD, c1: C.clawE, surf: SF.copper });
     h.fingers.push(B['f' + k + f]);
   }
   {
     const tb = J('th' + k), td = h.palm.clone().multiplyScalar(0.6).add(h.hd).add(v3(0, 0, 0.4)).normalize();
     ellip(core, tb.clone().addScaledVector(td, 0.04), v3(0.038, 0.062, 0.038), quatAlong(td), { w: 'th' + k, color: C.skinG, detail: 1, vol: false });
-    blade(core, tb.clone().addScaledVector(td, 0.08), td, h.hd, 0.23, 0.036, { w: 'th' + k, bend: 0.38, segs: 5, thin: 0.36, c0: C.copperD, c1: C.clawE, surf: SF.copper });
+    blade(core, tb.clone().addScaledVector(td, 0.08), td, h.hd, 0.23, 0.06, { w: 'th' + k, bend: 0.5, segs: 5, thin: 0.5, c0: C.copperD, c1: C.clawE, surf: SF.copper });
   }
   ARMV[k] = { delt, upper, bic, tri, foreU, foreL, qa, ql, ua, la };
 }
@@ -624,13 +634,13 @@ for (const s of SIDES) {
   const back = new V3().crossVectors(v3(1, 0, 0), sh).normalize(); // vers l'arrière-haut du tibia
   const calf = ellip(core, K.clone().addScaledVector(sh, 0.32).addScaledVector(back, -0.07), v3(0.13, sh.length() * 0.38, 0.15), qs, { w: 'shin' + k, color: C.furM });
   ellip(core, A.clone(), v3(0.09, 0.095, 0.095), qm, { w: 'meta' + k, color: C.furD, detail: 1 });
-  const meta = ellip(core, A.clone().addScaledVector(mt, 0.5), v3(0.078, mt.length() * 0.56, 0.088), qm, { w: 'meta' + k, color: C.furV });
+  const meta = ellip(core, A.clone().addScaledVector(mt, 0.5), v3(0.078, mt.length() * 0.56, 0.088), qm, { w: 'meta' + k, color: C.furD });
   // patte : coussinet, orteils, griffes
   // grosse patte (semelle à y = 0) : coussinet, quatre orteils écartés, griffes qui mordent le sol
-  ellip(core, BL.clone().add(v3(0, 0.005, 0.09)), v3(0.18, 0.085, 0.22), null, { w: 'foot' + k, color: C.furV, detail: 2 });
+  ellip(core, BL.clone().add(v3(0, 0.005, 0.09)), v3(0.18, 0.085, 0.22), null, { w: 'foot' + k, color: (c, n, out) => out.copy(C.furD).multiplyScalar(0.7).lerp(C.furM, 0.25 * ss(0.5, 0.95, n.y) * ss(0.0, 0.2, c.z - BL.z)).multiplyScalar(n.y < 0 ? 0.5 : 1), detail: 2, tint: false, jitter: 0.05 });
   for (let t = 0; t < 4; t++) {
     const ox = (t - 1.5) * 0.075, tp = BL.clone().add(v3(ox + s * 0.012, -0.02, 0.29 - Math.abs(t - 1.5) * 0.045));
-    ellip(core, tp, v3(0.055, 0.052, 0.09), qE(0.2, ox * 1.5, 0), { w: 'foot' + k, color: C.skinG, detail: 1, vol: false });
+    ellip(core, tp, v3(0.055, 0.052, 0.09), qE(0.2, ox * 1.5, 0), { w: 'foot' + k, color: (c, n, out) => out.copy(C.skin).lerp(C.furD, ss(0.2, 0.8, n.y)), detail: 1, vol: false, tint: false });
     blade(core, tp.clone().add(v3(0, 0.006, 0.075)), v3(ox * 0.8, -0.28, 1), v3(0, -1, 0), 0.14, 0.03, { w: 'foot' + k, bend: 0.42 });
   }
   blade(core, A.clone().add(v3(0, -0.02, 0.05)), v3(s * 0.2, -1, 0.5), v3(0, 0, 1), 0.08, 0.02, { w: 'meta' + k }); // ergot
@@ -723,60 +733,64 @@ for (const s of SIDES) {
   HEADV.push(ruff[s] = ellip(core, hp(s * 0.17, -0.06, -0.01), hr(0.12, 0.15, 0.14), qE(0, s * 0.25, 0), { w: 'head', color: C.furD, detail: 1, jitter: 0.06 }));
 }
 // museau court et profond : chanfrein ardoise qui s'éclaircit vers la truffe, flancs plus clairs, babine noire nette
-const lipY = z => lerp(-0.094, -0.064, ss(0.12, 0.5, z));
+const lipY = z => lerp(-0.094, -0.07, ss(0.12, 0.44, z));
 const muzCol = (c, n, out) => {
   const l = toHead(c);
   if (l.y < lipY(l.z) || n.y < -0.55) out.copy(C.skin);
   else if (n.y > 0.5) out.copy(C.furM).lerp(C.furW, 0.2 + 0.45 * ss(0.18, 0.48, l.z));
   else out.copy(C.furB).lerp(C.furW, 0.35 + 0.45 * ss(0.03, -0.06, l.y));
 };
-loftZ(core, [[0.12, -0.15, 0.1, 0.14, 0.155, 0.105], [0.23, -0.142, 0.086, 0.13, 0.14, 0.09], [0.34, -0.13, 0.071, 0.115, 0.121, 0.076],
-  [0.44, -0.115, 0.058, 0.097, 0.1, 0.063], [0.5, -0.1, 0.047, 0.078, 0.08, 0.05]], [0, -0.028, 0.53], hp, { w: 'head', color: muzCol, jitter: 0.05, tint: 0.06 });
-const muzzle = vol(hp(0, -0.025, 0.33), hr(0.13, 0.115, 0.21), null, 'head');
+// museau raccourci (bout à z 0,47) et plus haut à l'avant : profil puissant et carré, pas une pointe
+loftZ(core, [[0.12, -0.15, 0.1, 0.14, 0.155, 0.105], [0.21, -0.144, 0.088, 0.132, 0.142, 0.092], [0.3, -0.135, 0.076, 0.12, 0.126, 0.08],
+  [0.38, -0.124, 0.066, 0.104, 0.108, 0.07], [0.435, -0.112, 0.056, 0.088, 0.09, 0.058]], [0, -0.03, 0.47], hp, { w: 'head', color: muzCol, jitter: 0.05, tint: 0.06 });
+const muzzle = vol(hp(0, -0.03, 0.3), hr(0.13, 0.12, 0.18), null, 'head');
 HEADV.push(muzzle);
-// rides du rictus : bourrelets clairs et sillons sombres en travers du chanfrein, plis qui descendent sur les flancs
-const bridgeY = z => lerp(0.086, 0.058, ss(0.23, 0.44, z));
+// rides du rictus : 2-3 bourrelets de fourrure sur le chanfrein, séparés par des plis à peine plus sombres (pas de noir)
+const bridgeY = z => lerp(0.088, 0.064, ss(0.21, 0.4, z));
+const creaseC = C.furD.clone().lerp(C.furM, 0.35);
 for (let k = 0; k < 3; k++) {
-  const z = 0.255 + k * 0.05, y = bridgeY(z);
-  ellip(core, hp(0, y + 0.008, z), hr(0.084 - k * 0.012, 0.024, 0.022), qE(0.12, 0, 0), { w: 'head', color: C.furW, detail: 1, jitter: 0.05, tint: false, vol: false });
-  ellip(core, hp(0, y + 0.012, z + 0.027), hr(0.076 - k * 0.012, 0.012, 0.01), null, { w: 'head', color: C.skin, surf: SF.skin, detail: 1, jitter: 0, tint: false, vol: false });
-  for (const s of SIDES) {
-    ellip(core, hp(s * (0.092 - k * 0.01), y - 0.03, z + 0.006), hr(0.02, 0.045, 0.02), qE(0, 0, s * 0.6), { w: 'head', color: C.furW, detail: 1, jitter: 0.05, tint: false, vol: false });
-    ellip(core, hp(s * (0.1 - k * 0.01), y - 0.034, z + 0.03), hr(0.01, 0.04, 0.01), qE(0, 0, s * 0.6), { w: 'head', color: C.skin, surf: SF.skin, detail: 0, jitter: 0, tint: false, vol: false });
+  const z = 0.235 + k * 0.042, y = bridgeY(z);
+  ellip(core, hp(0, y + 0.002, z), hr(0.074 - k * 0.012, 0.014, 0.017), qE(0.12, 0, 0), { w: 'head', color: k === 1 ? C.furB : C.furM, detail: 1, jitter: 0.04, tint: false, vol: false });
+  if (k < 2) ellip(core, hp(0, y + 0.004, z + 0.021), hr(0.064 - k * 0.012, 0.009, 0.006), null, { w: 'head', color: creaseC, detail: 1, jitter: 0, tint: false, vol: false });
+  for (const s of SIDES) if (k < 2) {
+    ellip(core, hp(s * (0.088 - k * 0.01), y - 0.03, z + 0.006), hr(0.014, 0.036, 0.014), qE(0, 0, s * 0.6), { w: 'head', color: C.furM, detail: 1, jitter: 0.04, tint: false, vol: false });
+    ellip(core, hp(s * (0.097 - k * 0.01), y - 0.032, z + 0.022), hr(0.006, 0.032, 0.006), qE(0, 0, s * 0.6), { w: 'head', color: creaseC, detail: 0, jitter: 0, tint: false, vol: false });
   }
 }
-// truffe large et sombre (luisante), narines, philtrum
-ellip(core, hp(0, 0.004, 0.5), hr(0.078, 0.042, 0.05), qE(0.5, 0, 0), { w: 'head', color: C.nose, surf: SF.nose, detail: 2, jitter: 0.06, tint: false, vol: false });
-ellip(core, hp(0, 0.03, 0.47), hr(0.058, 0.026, 0.05), qE(0.25, 0, 0), { w: 'head', color: C.nose, surf: SF.nose, detail: 1, jitter: 0.06, tint: false, vol: false });
-ellip(core, hp(0, -0.045, 0.522), hr(0.012, 0.035, 0.012), null, { w: 'head', color: C.skin, surf: SF.skin, detail: 1, jitter: 0, vol: false });
+// truffe : large coin aplati, incliné vers l'avant, satinée (pas une bille vernie) ; narines fendues
+const NOSE_SF = [0.72, 0, 0, 0];
+ellip(core, hp(0, -0.002, 0.452), hr(0.07, 0.03, 0.044), qE(0.42, 0, 0), { w: 'head', color: C.nose, surf: NOSE_SF, detail: 2, jitter: 0.04, tint: false, vol: false });
+ellip(core, hp(0, 0.018, 0.428), hr(0.056, 0.02, 0.04), qE(0.22, 0, 0), { w: 'head', color: C.nose, surf: NOSE_SF, detail: 1, jitter: 0.04, tint: false, vol: false });
 for (const s of SIDES) {
-  ellip(core, hp(s * 0.034, -0.008, 0.542), hr(0.02, 0.012, 0.014), qE(0, 0, s * 0.4), { w: 'head', color: col(0x030203), surf: SF.skin, detail: 1, vol: false, jitter: 0 }); // narines
-  // orbites enfoncées sous l'arcade, yeux bridés (coin extérieur relevé)
-  ellip(core, hp(s * 0.1, 0.058, 0.228), hr(0.062, 0.026, 0.034), qE(0, s * 0.5, s * 0.5), { w: 'head', color: C.skin, surf: SF.skin, detail: 1, vol: false });
-  ellip(core, hp(s * 0.103, 0.06, 0.24), hr(0.048, 0.014, 0.02), qE(0, s * 0.5, s * 0.5), { w: 'head', color: C.eye, surf: SF.eye, detail: 1, jitter: 0, vol: false });
-  // babine retroussée : gencive rouge visible sous le liseré noir, au-dessus des crocs
-  ellip(core, hp(s * 0.09, -0.116, 0.38), hr(0.022, 0.02, 0.11), qE(0, -s * 0.16, 0), { w: 'head', color: C.gum, surf: SF.gum, detail: 1, vol: false, jitter: 0.1 });
+  ellip(core, hp(s * 0.03, -0.01, 0.488), hr(0.017, 0.008, 0.01), qE(0, 0, s * 0.5), { w: 'head', color: col(0x020102), surf: NOSE_SF, detail: 1, vol: false, jitter: 0 }); // narines
+  // orbites profondes sous l'arcade (l'œil brille dans l'ombre), fente d'œil fine et très bridée
+  ellip(core, hp(s * 0.1, 0.056, 0.226), hr(0.07, 0.034, 0.036), qE(0, s * 0.5, s * 0.55), { w: 'head', color: C.skin, surf: SF.skin, detail: 1, vol: false });
+  ellip(core, hp(s * 0.104, 0.058, 0.243), hr(0.04, 0.008, 0.016), qE(0, s * 0.5, s * 0.68), { w: 'head', color: C.eye, surf: SF.eye, detail: 1, jitter: 0, vol: false });
+  // babine retroussée : liseré noir net, gencive sombre et fine dessous, au-dessus des crocs
+  ellip(core, hp(s * 0.093, -0.1, 0.33), hr(0.013, 0.011, 0.11), qE(0.06, -s * 0.18, 0), { w: 'head', color: C.skin, surf: SF.skin, detail: 1, vol: false, jitter: 0 });
+  ellip(core, hp(s * 0.086, -0.113, 0.34), hr(0.014, 0.011, 0.09), qE(0, -s * 0.18, 0), { w: 'head', color: C.gum.clone().multiplyScalar(0.6), surf: SF.gum, detail: 1, vol: false, jitter: 0.08 });
   // longs crocs supérieurs, prémolaires
-  blade(core, hp(s * 0.07, -0.11, 0.455), v3(0, -1, 0.1), v3(0, 0, -1), 0.15 * HS, 0.026 * HS, Object.assign({ w: 'head', bend: 0.16, segs: 4 }, tooth));
-  for (let t = 0; t < 4; t++) blade(core, hp(s * (0.09 - t * 0.002), -0.12, 0.4 - t * 0.055), v3(0, -1, 0), v3(0, 0, 1), 0.05 * HS, 0.016 * HS, Object.assign({ w: 'head', bend: 0.1, segs: 2 }, tooth));
+  blade(core, hp(s * 0.066, -0.11, 0.405), v3(0, -1, 0.1), v3(0, 0, -1), 0.15 * HS, 0.026 * HS, Object.assign({ w: 'head', bend: 0.16, segs: 4 }, tooth));
+  for (let t = 0; t < 4; t++) blade(core, hp(s * (0.088 - t * 0.002), -0.12, 0.36 - t * 0.05), v3(0, -1, 0), v3(0, 0, 1), 0.05 * HS, 0.016 * HS, Object.assign({ w: 'head', bend: 0.1, segs: 2 }, tooth));
 }
-for (let t = 0; t < 4; t++) blade(core, hp((t - 1.5) * 0.024, -0.1, 0.5), v3(0, -1, 0.1), v3(0, 0, -1), 0.04 * HS, 0.01 * HS, Object.assign({ w: 'head', segs: 2 }, tooth));
-ellip(core, hp(0, -0.108, 0.33), hr(0.08, 0.02, 0.17), null, { w: 'head', color: C.gum, surf: SF.gum, detail: 1, vol: false, jitter: 0.1 }); // palais
-// mâchoire lourde : menton clair, gencive et langue
-loftZ(core, [[0.0, -0.1, 0.0, 0.1, 0.11, 0.098], [0.14, -0.106, -0.004, 0.098, 0.104, 0.09], [0.27, -0.096, -0.01, 0.085, 0.088, 0.078],
-  [0.37, -0.08, -0.014, 0.068, 0.07, 0.062]], [0, -0.04, 0.42], jp, {
+for (let t = 0; t < 4; t++) blade(core, hp((t - 1.5) * 0.022, -0.104, 0.445), v3(0, -1, 0.1), v3(0, 0, -1), 0.04 * HS, 0.01 * HS, Object.assign({ w: 'head', segs: 2 }, tooth));
+ellip(core, hp(0, -0.11, 0.3), hr(0.075, 0.018, 0.15), null, { w: 'head', color: C.gum.clone().multiplyScalar(0.5), surf: SF.gum, detail: 1, vol: false, jitter: 0.1 }); // palais
+// mâchoire lourde et profonde : menton clair, gencive et langue
+loftZ(core, [[0.0, -0.12, 0.0, 0.1, 0.112, 0.098], [0.13, -0.128, -0.004, 0.098, 0.106, 0.09], [0.24, -0.118, -0.01, 0.086, 0.09, 0.078],
+  [0.33, -0.1, -0.014, 0.07, 0.072, 0.062]], [0, -0.05, 0.38], jp, {
   w: 'jaw', jitter: 0.05, tint: 0.05, color: (c, n, out) => {
-    if (n.y > 0.6) out.copy(C.gum).multiplyScalar(0.7); else if (n.y > 0.15) out.copy(C.skin);
+    if (n.y > 0.6) out.copy(C.gum).multiplyScalar(0.45); else if (n.y > 0.15) out.copy(C.skin);
     else out.copy(C.furB).lerp(C.furL, 0.35 + 0.5 * ss(0.1, -0.7, n.y));
   },
 });
-const jawV = vol(jp(0, -0.05, 0.2), hr(0.1, 0.06, 0.24), null, 'jaw');
-ellip(core, jp(0, -0.006, 0.22), hr(0.072, 0.02, 0.17), null, { w: 'jaw', color: C.gum, surf: SF.gum, detail: 1, vol: false });
-ellip(core, jp(0, 0.006, 0.2), hr(0.056, 0.016, 0.16), null, { w: 'jaw', color: C.tongue, surf: SF.gum, detail: 1, vol: false });
+const jawV = vol(jp(0, -0.06, 0.18), hr(0.1, 0.07, 0.22), null, 'jaw');
+ellip(core, jp(0, -0.006, 0.2), hr(0.07, 0.018, 0.15), null, { w: 'jaw', color: C.gum.clone().multiplyScalar(0.55), surf: SF.gum, detail: 1, vol: false });
+ellip(core, jp(0, 0.006, 0.18), hr(0.054, 0.016, 0.14), null, { w: 'jaw', color: C.tongue.clone().multiplyScalar(0.7), surf: SF.gum, detail: 1, vol: false });
 for (const s of SIDES) {
-  ellip(core, jp(s * 0.07, -0.004, 0.27), hr(0.022, 0.02, 0.13), qE(0, -s * 0.12, 0), { w: 'jaw', color: C.gum, surf: SF.gum, detail: 1, vol: false, jitter: 0.12 }); // gencive inférieure
-  blade(core, jp(s * 0.056, -0.01, 0.355), v3(0, 1, 0.06), v3(0, 0, -1), 0.11 * HS, 0.022 * HS, Object.assign({ w: 'jaw', bend: 0.12, segs: 3 }, tooth));
-  for (let t = 0; t < 3; t++) blade(core, jp(s * 0.068, -0.005, 0.29 - t * 0.065), v3(0, 1, 0), v3(0, 0, 1), 0.04 * HS, 0.014 * HS, Object.assign({ w: 'jaw', segs: 2 }, tooth));
+  ellip(core, jp(s * 0.069, -0.004, 0.24), hr(0.014, 0.012, 0.11), qE(0, -s * 0.12, 0), { w: 'jaw', color: C.gum.clone().multiplyScalar(0.55), surf: SF.gum, detail: 1, vol: false, jitter: 0.12 }); // gencive inférieure
+  ellip(core, jp(s * 0.077, -0.016, 0.22), hr(0.01, 0.01, 0.13), qE(0, -s * 0.12, 0), { w: 'jaw', color: C.skin, surf: SF.skin, detail: 1, vol: false, jitter: 0 }); // babine inférieure noire
+  blade(core, jp(s * 0.055, -0.01, 0.315), v3(0, 1, 0.06), v3(0, 0, -1), 0.11 * HS, 0.022 * HS, Object.assign({ w: 'jaw', bend: 0.12, segs: 3 }, tooth));
+  for (let t = 0; t < 3; t++) blade(core, jp(s * 0.067, -0.005, 0.26 - t * 0.06), v3(0, 1, 0), v3(0, 0, 1), 0.04 * HS, 0.014 * HS, Object.assign({ w: 'jaw', segs: 2 }, tooth));
 }
 /* Oreilles : grandes (~0,85 m), épaisses, rejetées en arrière et vers le haut, bien visibles au-dessus du crâne ;
  * coque en gouttière (face interne creusée sombre, bord intérieur rouge qui accroche la lumière, dos bombé couvert de
@@ -791,7 +805,7 @@ for (const s of SIDES) {
   const F = [], Bk = [], Ax = [];
   for (let i = 0; i <= NU; i++) {
     const u = i / NU, w = W0 * Math.pow(1 - u, 0.85) * (1 + 0.3 * Math.sin(u * Math.PI)) + 0.002;
-    const th = 0.07 * (1 - u) + 0.01, D = 0.55 * w, Bb = 0.34 * w;
+    const th = 0.1 * (1 - u) + 0.022, D = 0.5 * w, Bb = 0.4 * w;
     const ax = eb.clone().addScaledVector(dir, u * L).addScaledVector(back, u * u * 0.2);
     Ax.push(ax);
     const fr = [], br = [];
@@ -834,7 +848,7 @@ for (const s of SIDES) {
   for (let i = 0; i < NU; i++) for (const j of [0, NV]) {
     _r.copy(Ax[i]).add(Ax[i + 1]).multiplyScalar(0.5);
     bkCol(i / NU, 1, cB);
-    cI.copy(j === 0 ? C.earRed : C.furW).lerp(cB, ss(0.6, 1, i / NU) * 0.6);
+    cI.copy(j === 0 ? C.earRed.clone().multiplyScalar(0.8) : C.furB).lerp(cB, ss(0.6, 1, i / NU) * 0.6);
     triO(core, F[i][j], Bk[i][j], Bk[i + 1][j], cI, cB, cB, null, null, null, _r, SF.fur);
     triO(core, F[i][j], Bk[i + 1][j], F[i + 1][j], cI, cB, cI, null, null, null, _r, SF.fur);
   }
@@ -851,12 +865,19 @@ for (const s of SIDES) {
     const v = -0.5 + t * 0.25, i = 1 + (t % 3);
     const bp = F[i][Math.round((v + 1) / 2 * NV)].clone().addScaledVector(open, 0.01);
     const dd = Ax[NU].clone().sub(bp).normalize().addScaledVector(open, 0.3).normalize();
-    lock(core, bp, open, dd, (0.15 + 0.05 * rnd()) * HS, 0.032 * HS, C.furB, C.furL, { w: 'ear' + k, raise: 0.2, thick: 0.28 });
+    lock(core, bp, open, dd, (0.15 + 0.05 * rnd()) * HS, 0.032 * HS, C.furM, C.furB, { w: 'ear' + k, raise: 0.2, thick: 0.28 });
   }
   for (let t = 0; t < 5; t++) {
     const bp = Bk[t % 3][t < 3 ? NV : 0].clone();
     const dd = dir.clone().addScaledVector(wd, (t < 3 ? 1 : -1) * 0.5).addScaledVector(back, 0.5).normalize();
     lock(core, bp, wd.clone().multiplyScalar(t < 3 ? 1 : -1), dd, 0.24 * HS, 0.055 * HS, C.furD, C.furM, { w: 'ear' + k, raise: 0.5, thick: 0.3 });
+  }
+  // frange de poils sur le bord extérieur (épaisseur, silhouette lisible même tête levée)
+  for (let t = 0; t < 6; t++) {
+    const e = t & 1 ? NV : 0, i = 2 + (t >> 1) * 2, sg = e ? 1 : -1;
+    const bp = Bk[i][e].clone().addScaledVector(wd, sg * 0.01);
+    const dd = dir.clone().addScaledVector(wd, sg * 0.45).addScaledVector(back, 0.25).normalize();
+    lock(core, bp, wd.clone().multiplyScalar(sg), dd, (0.13 - 0.02 * (t >> 1)) * HS, 0.03 * HS, C.furD, C.furM, { w: 'ear' + k, raise: 0.3, thick: 0.35, mid: 0.55 });
   }
   if (s > 0) { // anneau de bronze au bord de l'oreille gauche
     const rp = F[3][NV].clone().addScaledVector(wd, 0.014);
@@ -864,7 +885,7 @@ for (const s of SIDES) {
   }
 }
 // fourrure de la tête (même échelle)
-const maneR = cmix(C.furD, C.furM, 0.3), maneT = (p, n, out) => out.copy(C.furM).lerp(rnd() < 0.3 ? C.furW : C.furB, rnd() < 0.3 ? 0.35 : 0.6);
+const maneR = cmix(C.furD, C.furM, 0.3), maneT = (p, n, out) => out.copy(C.furM).lerp(rnd() < 0.2 ? C.furW : C.furB, rnd() < 0.3 ? 0.25 : 0.45);
 const lightR = cst(C.furL), lightT = cst(C.furP);
 const darkR = cst(C.furD), midT = cmix(C.furN, C.furB, 0.5);
 const awayFromEars = p => p.distanceTo(J('earL')) > 0.11 * HS && p.distanceTo(J('earR')) > 0.11 * HS;
@@ -872,16 +893,16 @@ fur(core, cran, 18, {
   filter: (p, n) => n.y > -0.1 && p.z < HJ.z + 0.06 && awayFromEars(p), flow: (p, n, d) => d.set(p.x * 1.2, 0.15, -1),
   len: [0.16, 0.26], wid: [0.07, 0.1], lift: 0.22, cR: maneR, cT: maneT, raise: 0.8,
 });
-const ruffT = (p, n, out) => out.copy(C.furB).lerp(C.furW, 0.25 + 0.35 * rnd());
+const ruffT = (p, n, out) => out.copy(C.furM).lerp(C.furB, 0.4 + 0.4 * rnd());
 for (const s of SIDES) {
   // grande collerette en éventail, en deux rangs étagés : joues (court), puis base derrière la mâchoire (long, rejeté en arrière)
   fur(core, cheek[s], 14, {
     filter: (p, n) => n.x * s > 0.25 && n.z < 0.7, flow: (p, n, d) => d.set(s * 1.0, -0.3, -0.6),
-    len: [0.2, 0.3], wid: [0.07, 0.1], lift: 0.24, cR: cmix(C.furM, C.furB, 0.5), cT: cmix(C.furB, C.furW, 0.55), raise: 0.6, clump: 2,
+    len: [0.2, 0.3], wid: [0.07, 0.1], lift: 0.24, cR: cmix(C.furD, C.furM, 0.6), cT: cmix(C.furM, C.furB, 0.6), raise: 0.6, clump: 2, mid: 0.6,
   });
   fur(core, ruff[s], 24, {
     filter: (p, n) => n.x * s > 0.05 && n.z < 0.8, flow: (p, n, d) => d.set(s * 1.0, -0.15 - 0.5 * ss(0.0, -0.8, n.y), -0.8),
-    len: [0.3, 0.46], wid: [0.085, 0.12], lift: 0.32, cR: cmix(C.furD, C.furM, 0.5), cT: ruffT, raise: 0.7, clump: 2, occLim: 0.9,
+    len: [0.3, 0.46], wid: [0.08, 0.11], lift: 0.32, cR: cmix(C.furD, C.furM, 0.4), cT: ruffT, raise: 0.7, clump: 2, occLim: 0.9, mid: 0.58,
   });
 }
 fur(core, jawV, 12, { // barbiche : menton clair
@@ -954,11 +975,11 @@ for (const s of SIDES) {
 // gorge, plastron : grande collerette pâle sous la tête
 fur(core, throatV, 20, {
   filter: (p, n) => n.y < 0.35, flow: (p, n, d) => d.set(0, -1, -0.1),
-  len: [0.22, 0.34], wid: [0.075, 0.105], lift: 0.16, cR: cmix(C.furW, C.furL, 0.5), cT: cmix(C.furL, C.furP, 0.4), raise: 0.5, clump: 2,
+  len: [0.22, 0.34], wid: [0.07, 0.1], lift: 0.16, cR: cmix(C.furD, C.furM, 0.6), cT: cmix(C.furM, C.furW, 0.4), raise: 0.5, clump: 2, mid: 0.6,
 });
 fur(core, ribV, 20, {
   filter: (p, n) => n.z > 0.55 && p.y > 1.95 && Math.abs(p.x) < 0.22, flow: (p, n, d) => d.set(0, -1, 0.1),
-  len: [0.17, 0.26], wid: [0.075, 0.1], lift: 0.1, cR: cmix(C.furW, C.furL, 0.4), cT: cmix(C.furL, C.furP, 0.3), raise: 0.4, occLim: 0.98,
+  len: [0.17, 0.26], wid: [0.07, 0.095], lift: 0.1, cR: cmix(C.furM, C.furW, 0.35), cT: cmix(C.furM, C.furW, 0.75), raise: 0.4, occLim: 0.98,
 });
 for (const s of SIDES) fur(core, PEC[s], 11, {
   filter: (p, n) => n.z > 0.2 && n.y > -0.3, flow: (p, n, d) => d.set(-s * 0.15, -1, 0.15),
@@ -966,13 +987,13 @@ for (const s of SIDES) fur(core, PEC[s], 11, {
 });
 // queue : grandes mèches larges couchées le long du panache (flux continu vers la pointe), peu soulevées
 const tailRoot = (p, nn, out) => out.copy(C.furD).lerp(C.furN, nn.y > 0 ? 0.45 : 0);
-const tailTip = (p, nn, out) => out.copy(C.furN).lerp(rnd() < 0.3 ? C.furB : C.furM, 0.55).multiplyScalar(nn.y < -0.2 ? 0.7 : 1);
+const tailTip = (p, nn, out) => out.copy(C.furD).lerp(C.furN, 0.5 + 0.3 * rnd()).multiplyScalar(nn.y > 0.3 ? 0.8 : nn.y < -0.2 ? 0.65 : 0.9);
 for (let i = 0; i < TAIL_N; i++) {
   const a = TAILP[i], b = TAILP[i + 1], d = b.clone().sub(a).normalize(), R = TAIL_R[i];
-  const n = Math.round(5 + 22 * R), tip = Math.max(0, i - (TAIL_N - 4)) / 3; // 0 → 1 sur les trois derniers tronçons
+  const n = Math.round(3 + 13 * R), tip = Math.max(0, i - (TAIL_N - 4)) / 3; // 0 → 1 sur les trois derniers tronçons
   fur(core, TAILV[i], n, {
-    occl: false, flow: (p, nn, out) => out.copy(d).addScaledVector(nn, -0.3 * tip), len: [0.28, 0.38], wid: [0.18, 0.25], lift: -0.02 - 0.05 * tip, clump: 2,
-    lenFn: () => (0.6 + 1.4 * R) * (1 - 0.25 * tip), cR: tailRoot, cT: tailTip, raise: 0.15, w: TAILW[i], arch: 0.02, curl: -0.08, thick: 0.18,
+    occl: false, flow: (p, nn, out) => out.copy(d).addScaledVector(nn, -0.3 * tip), len: [0.34, 0.46], wid: [0.1, 0.14], lift: -0.05 - 0.05 * tip, clump: 2, mid: 0.5,
+    lenFn: () => (0.6 + 1.4 * R) * (1 - 0.25 * tip), cR: tailRoot, cT: tailTip, raise: 0.08, w: TAILW[i], arch: 0.03, curl: -0.1, thick: 0.4,
   });
 }
 { // pointe : un faisceau de mèches qui converge
@@ -980,7 +1001,7 @@ for (let i = 0; i < TAIL_N; i++) {
   for (let t = 0; t < 6; t++) {
     const an = t / 6 * Math.PI * 2, o = v3(Math.cos(an), 0, Math.sin(an) * 0.6).applyQuaternion(quatAlong(d, UP));
     const bp = a.clone().lerp(b, 0.2).addScaledVector(o, 0.08);
-    lock(core, bp, o, d.clone().addScaledVector(o, -0.12).normalize(), 0.5 + rnd() * 0.12, 0.1, C.furD, C.furB, { w: 'tail' + i, raise: 0.3, arch: 0.02, curl: 0.0, thick: 0.3 });
+    lock(core, bp, o, d.clone().addScaledVector(o, -0.12).normalize(), 0.5 + rnd() * 0.12, 0.08, C.furD, C.furN, { w: 'tail' + i, raise: 0.3, arch: 0.02, curl: 0.0, thick: 0.3, mid: 0.5 });
   }
 }
 // ventre et flancs
@@ -1013,7 +1034,7 @@ for (const s of SIDES) {
 for (let i = 0; i < TAIL_N; i++) {
   const a = TAILP[i], b = TAILP[i + 1], d = b.clone().sub(a).normalize(), R = TAIL_R[i];
   const tip = Math.max(0, i - (TAIL_N - 4)) / 3;
-  fur(extra, TAILV[i], Math.round(4 + 18 * R), { occl: false, flow: (p, nn, out) => out.copy(d).addScaledVector(nn, 0.02 - 0.35 * tip), len: [0.24, 0.34], wid: [0.16, 0.22], lift: 0.0 - 0.06 * tip, lenFn: () => (0.6 + 1.4 * R) * (1 - 0.25 * tip), cR: tailRoot, cT: tailTip, raise: 0.25, clump: 2, w: TAILW[i], thick: 0.18, curl: -0.06, arch: 0.02 });
+  fur(extra, TAILV[i], Math.round(2 + 9 * R), { occl: false, flow: (p, nn, out) => out.copy(d).addScaledVector(nn, -0.02 - 0.35 * tip), len: [0.3, 0.4], wid: [0.09, 0.13], mid: 0.5, lift: -0.04 - 0.06 * tip, lenFn: () => (0.6 + 1.4 * R) * (1 - 0.25 * tip), cR: tailRoot, cT: tailTip, raise: 0.12, clump: 2, w: TAILW[i], thick: 0.4, curl: -0.08, arch: 0.03 });
 }
 
 /* =====================================================================================
@@ -1127,36 +1148,37 @@ for (const s of SIDES) {
   // coque en deux plaques qui se chevauchent (lèvre épaisse côté coude) + coque intérieure sombre
   for (const [ua, ub] of [[U0, 0.58], [0.54, U1]]) {
     const ra = rad(ua) + 0.014, rb = rad(ub);
-    cylAB(core, at(ua), at(ub), ra, rb, 8, wo(COPPER, wF, { hint: v3(s, 0, 0) }), true);
-    ring(core, at(ua + 0.012), a.la, ra + 0.006, 0.03, 4, 8, wo(COPPERD, wF), null);
+    cylAB(core, at(ua), at(ub), ra, rb, 8, wo(GAUNT, wF, { hint: v3(s, 0, 0) }), true);
+    ring(core, at(ua + 0.012), a.la, ra + 0.006, 0.03, 4, 8, wo(GAUNTD, wF), null);
   }
-  cylAB(core, at(U1 - 0.005), at(U0 + 0.005), R1 * 0.95, R0 * 0.95, 8, wo(COPPERD, wF, { hint: v3(s, 0, 0) }), true);
+  cylAB(core, at(U1 - 0.005), at(U0 + 0.005), R1 * 0.95, R0 * 0.95, 8, wo(GAUNTD, wF, { hint: v3(s, 0, 0) }), true);
   // manchette évasée au coude, bourrelet et couronne crénelée au poignet (dents qui retombent sur le dos de la main)
-  cylAB(core, at(U0 - 0.07), at(U0 + 0.02), R0 + 0.055, R0 + 0.02, 10, wo(COPPERD, wF));
-  ring(core, at(U0 - 0.07), a.la, R0 + 0.055, 0.022, 4, 10, wo(COPPER, wF));
-  ring(core, at(U1 - 0.01), a.la, R1 + 0.014, 0.036, 4, 10, wo(COPPERD, wF));
+  cylAB(core, at(U0 - 0.1), at(U0 + 0.02), R0 + 0.085, R0 + 0.02, 10, wo(GAUNTD, wF));
+  ring(core, at(U0 - 0.1), a.la, R0 + 0.085, 0.034, 5, 10, wo(GAUNT, wF));
+  ring(core, at(U0 - 0.035), a.la, R0 + 0.05, 0.016, 4, 10, wo(GAUNTD, wF));
+  ring(core, at(U1 - 0.01), a.la, R1 + 0.014, 0.036, 4, 10, wo(GAUNTD, wF));
   const outv = v3(0, 0, 1).applyQuaternion(q), side = v3(1, 0, 0).applyQuaternion(q);
   const dirA = an => outv.clone().multiplyScalar(Math.cos(an)).addScaledVector(side, Math.sin(an));
-  for (let i = 0; i < 8; i++) {
-    const dd = dirA(i / 8 * Math.PI * 2 + 0.2), bp = at(U1 + 0.012).addScaledVector(dd, R1 + 0.012);
-    spike(core, bp, bp.clone().addScaledVector(lan, 0.09).addScaledVector(dd, 0.015), 0.032, wo(COPPER, wF));
+  for (let i = 0; i < 10; i++) {
+    const dd = dirA(i / 10 * Math.PI * 2 + 0.2), bp = at(U1 + 0.012).addScaledVector(dd, R1 + 0.02);
+    spike(core, bp, bp.clone().addScaledVector(lan, 0.11).addScaledVector(dd, 0.03), 0.04, wo(GAUNT, wF));
   }
-  for (const u of [0.36, 0.72]) for (let i = 0; i < 7; i++) rivet(core, at(u).addScaledVector(dirA(i / 7 * Math.PI * 2 + 1.1), rad(u) + 0.024), 0.017, wo(COPPERD, wF));
+  for (const u of [0.36, 0.72]) for (let i = 0; i < 7; i++) rivet(core, at(u).addScaledVector(dirA(i / 7 * Math.PI * 2 + 1.1), rad(u) + 0.024), 0.017, wo(GAUNTD, wF));
   // fenêtre côté extérieur : fond sombre, cage (montants + arceaux rivetés), quatre grosses fioles de chimie lumineuse
-  box(core, at(0.6).addScaledVector(outv, rad(0.6) + 0.02), 0.29, a.la.length() * 0.52, 0.03, q, wo(COPPERD, wF, { color: C.copperD.clone().multiplyScalar(0.45) }));
+  box(core, at(0.6).addScaledVector(outv, rad(0.6) + 0.02), 0.29, a.la.length() * 0.52, 0.03, q, wo(GAUNTD, wF, { color: C.copperD.clone().multiplyScalar(0.45) }));
   const CR = u => rad(u) + 0.062;
-  for (const an of [-0.68, -0.34, 0, 0.34, 0.68]) cylAB(core, at(0.33).addScaledVector(dirA(an), CR(0.33) + 0.012), at(0.87).addScaledVector(dirA(an), CR(0.87) + 0.012), an === 0 ? 0.01 : 0.014, an === 0 ? 0.01 : 0.014, 5, wo(COPPER, wF));
+  for (const an of [-0.68, -0.34, 0, 0.34, 0.68]) cylAB(core, at(0.33).addScaledVector(dirA(an), CR(0.33) + 0.012), at(0.87).addScaledVector(dirA(an), CR(0.87) + 0.012), an === 0 ? 0.01 : 0.014, an === 0 ? 0.01 : 0.014, 5, wo(GAUNT, wF));
   for (const u of [0.345, 0.855]) {
     const ARC = 1.62, x = dirA(-ARC / 2), qq = new Quat().setFromRotationMatrix(_mb.makeBasis(x, new V3().crossVectors(lan, x), lan));
-    emitGeo(core, new THREE.TorusGeometry(CR(u) + 0.012, 0.02, 4, 8, ARC), M4(at(u), qq), wo(COPPERD, wF));
-    for (const an of [-0.68, -0.34, 0.34, 0.68]) rivet(core, at(u).addScaledVector(dirA(an), CR(u) + 0.034), 0.014, wo(COPPER, wF));
+    emitGeo(core, new THREE.TorusGeometry(CR(u) + 0.012, 0.02, 4, 8, ARC), M4(at(u), qq), wo(GAUNTD, wF));
+    for (const an of [-0.68, -0.34, 0.34, 0.68]) rivet(core, at(u).addScaledVector(dirA(an), CR(u) + 0.034), 0.014, wo(GAUNT, wF));
   }
   for (const an of [-0.51, -0.17, 0.17, 0.51]) {
     const d0 = dirA(an), u0 = 0.37, u1 = 0.83, pa = at(u0).addScaledVector(d0, CR(u0)), pb = at(u1).addScaledVector(d0, CR(u1));
     cylAB(core, pa, pb, 0.034, 0.034, 8, { w: wF, color: C.liquid, surf: SF.vial, jitter: 0.06, tint: false });
     cylAB(glassB, pa, pb, 0.046, 0.046, 10, { w: wF, color: C.tooth, surf: SF.tube, jitter: 0, tint: false }, true);
     const ld = pb.clone().sub(pa).normalize();
-    for (const [pp, sg] of [[pa, -1], [pb, 1]]) cylAB(core, pp.clone().addScaledVector(ld, -sg * 0.014), pp.clone().addScaledVector(ld, sg * 0.03), 0.05, 0.046, 8, wo(COPPERD, wF));
+    for (const [pp, sg] of [[pa, -1], [pb, 1]]) cylAB(core, pp.clone().addScaledVector(ld, -sg * 0.014), pp.clone().addScaledVector(ld, sg * 0.03), 0.05, 0.046, 8, wo(GAUNTD, wF));
   }
   // petit tuyau de la fiole vers le dos de la main
   const vc = at(U1).addScaledVector(outv, R1 + 0.01);
@@ -1223,7 +1245,7 @@ function flap(top, down, across, out, wTop, wBot, len, rows, o) {
   sgNew(true);
   const cF = new THREE.Color(), cB = new THREE.Color(), _r = new V3();
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    cF.copy(o.color).multiplyScalar(0.85 + rnd() * 0.3).lerp(C.clothD, r === rows - 1 ? 0.25 : 0);
+    cF.copy(o.color).multiplyScalar(0.6 + rnd() * 0.25).lerp(C.clothD, 0.15 + 0.3 * r / rows).lerp(C.grime, hash3(c, r, rows) * 0.3);
     cB.copy(cF).multiplyScalar(0.55);
     const A = G[r][c], Bq = G[r][c + 1], Cq = G[r + 1][c + 1], D = G[r + 1][c];
     _r.copy(A).add(Cq).multiplyScalar(0.5).addScaledVector(out, -1);
@@ -1235,9 +1257,9 @@ function flap(top, down, across, out, wTop, wBot, len, rows, o) {
 }
 {
   const ib = Math.round(belt.P.length * 0.25), pf = belt.P[ib].clone().addScaledVector(belt.Nn[ib], 0.02);
-  flap(pf.clone().add(v3(0, -0.04, 0)), v3(0, -1, 0.12).normalize(), v3(1, 0, 0), v3(0, 0.1, 1).normalize(), 0.17, 0.15, 0.5, 3, { w: 'pelvis', color: C.clothL, bulge: 0.05, flare: 0.06 });
+  flap(pf.clone().add(v3(0, -0.04, 0)), v3(0, -1, 0.12).normalize(), v3(1, 0, 0), v3(0, 0.1, 1).normalize(), 0.17, 0.15, 0.5, 3, { w: 'pelvis', color: C.cloth, bulge: 0.05, flare: 0.06 });
   const iBk = Math.round(belt.P.length * 0.75), pb = belt.P[iBk].clone().addScaledVector(belt.Nn[iBk], 0.02);
-  flap(pb.clone().add(v3(0, -0.03, 0)), v3(0, -1, -0.55).normalize(), v3(-1, 0, 0), v3(0, 0.3, -1).normalize(), 0.18, 0.15, 0.42, 3, { w: 'pelvis', color: C.clothL, bulge: 0.08, flare: 0.1 });
+  flap(pb.clone().add(v3(0, -0.03, 0)), v3(0, -1, -0.55).normalize(), v3(-1, 0, 0), v3(0, 0.3, -1).normalize(), 0.18, 0.15, 0.42, 3, { w: 'pelvis', color: C.cloth, bulge: 0.08, flare: 0.1 });
   for (const s of SIDES) {
     const iS = Math.round(belt.P.length * (s > 0 ? 0.04 : 0.5)), ps = belt.P[iS].clone().addScaledVector(belt.Nn[iS], 0.02);
     flap(ps.clone().add(v3(0, -0.03, 0)), v3(s * 0.15, -1, 0).normalize(), v3(0, 0, 1), v3(s, 0.1, 0).normalize(), 0.11, 0.08, 0.3, 2, { w: 'pelvis', color: C.cloth, bulge: 0.04, flare: 0.08 });
@@ -1247,11 +1269,8 @@ function flap(top, down, across, out, wTop, wBot, len, rows, o) {
 const SCAR = { color: C.scar, surf: SF.skin, density: 60, taper: true };
 {
   const org = () => hp(0, 0.0, 0.05);
-  for (let i = 0; i < 3; i++) {
-    const o = i * 0.032;
-    strap([hp(-0.02 - o, 0.2, 0.12), hp(-0.07 - o, 0.14, 0.2), hp(-0.12 - o, 0.06, 0.22)], 0.016 * HS, 0.008, Object.assign({ set: HEADV, org }, SCAR));
-  }
-  strap([hp(0.03, 0.1, 0.25), hp(0.0, 0.07, 0.33), hp(-0.03, 0.05, 0.4)], 0.014 * HS, 0.006, Object.assign({ set: HEADV, org: () => hp(0, -0.02, 0.25) }, SCAR));
+  // une seule balafre courte, enfoncée dans la fourrure de l'arcade droite (plus de bandes flottantes au-dessus du front)
+  strap([hp(-0.08, 0.16, 0.16), hp(-0.1, 0.13, 0.185), hp(-0.12, 0.105, 0.2)], 0.012 * HS, 0.002, Object.assign({ set: HEADV, org }, SCAR, { color: C.scar.clone().multiplyScalar(0.7) }));
   for (let i = 0; i < 3; i++) {
     const o = i * 0.06;
     strap([v3(0.12 + o, 2.28 - o * 0.3, 0.5), v3(0.22 + o, 2.12 - o * 0.3, 0.5), v3(0.3 + o, 1.96 - o * 0.3, 0.46)], 0.03, 0.012, SCAR);
@@ -1335,7 +1354,9 @@ float tailK = smoothstep(-0.62, -0.85, vOP.z) * smoothstep(1.5, 1.2, vOP.y);
 vec3 fq = vOP.xyz * mix(vec3(30.0, 7.0, 30.0), vec3(26.0, 26.0, 5.0), tailK);
 float fs1 = wwN(fq) * 0.62 + wwN(fq * 2.3 + 3.7) * 0.38;
 float fs2 = wwN(fq.yzx * 1.7 + 9.1);
-diffuseColor.rgb *= mix(1.0, 0.78 + 0.44 * fs1, vOP.w);`)
+diffuseColor.rgb *= mix(1.0, 0.78 + 0.44 * fs1, vOP.w);
+float wwCard = step(0.925, vRM.x) * (1.0 - step(0.945, vRM.x));
+diffuseColor.rgb *= 1.0 - 0.18 * wwCard;`)
     .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 normal = normalize(normal + vOP.w * 0.22 * vec3(fs1 - 0.5, fs2 - 0.5, 0.0));`)
     .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vRM.x;')
@@ -1346,9 +1367,9 @@ float frs = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
 float fr3 = frs * frs * frs;
 vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 float upK = clamp(dot(normal, upV) * 0.5 + 0.55, 0.0, 1.0);
-totalEmissiveRadiance += uRim * diffuseColor.rgb * fr3 * upK * (1.0 - vRM.y * 0.5);
+totalEmissiveRadiance += uRim * diffuseColor.rgb * fr3 * upK * (1.0 - vRM.y * 0.5) * (1.0 - 0.7 * wwCard);
 // liseré de Fresnel froid indépendant de l'albédo : la silhouette se détache du fond sombre (sang en traque)
-totalEmissiveRadiance += uRim2 * (fr3 * frs) * (0.35 + 0.65 * upK) * (1.0 - vRM.y * 0.7);
+totalEmissiveRadiance += uRim2 * (fr3 * frs) * (0.35 + 0.65 * upK) * (1.0 - vRM.y * 0.7) * (1.0 - 0.6 * wwCard);
 // lumière d'appoint propre au personnage (la ruelle l'éclaire surtout à contre-jour) : garde lisibles le bleu
 // ardoise de la fourrure, le gris-bleu du masque et le bronze, plus fort sur les faces tournées vers le haut
 totalEmissiveRadiance += diffuseColor.rgb * uFill * (0.35 + 0.65 * upK);
@@ -1359,10 +1380,10 @@ totalEmissiveRadiance += diffuseColor.rgb * vRM.y * (0.04 + 0.4 * ek * ek * ek) 
 #if NUM_DIR_LIGHTS > 0
 // liseré de contre-jour : la clé de la scène (derrière lui) déborde sur la silhouette
 float rl = clamp(dot(normal, directionalLights[0].direction) + 0.55, 0.0, 1.0);
-totalEmissiveRadiance += directionalLights[0].color * diffuseColor.rgb * (fr3 * rl * uRimK);
+totalEmissiveRadiance += directionalLights[0].color * diffuseColor.rgb * (fr3 * rl * uRimK) * (1.0 - 0.7 * wwCard);
 #endif`);
 };
-bodyMat.customProgramCacheKey = () => 'ww-warwick-body-v3';
+bodyMat.customProgramCacheKey = () => 'ww-warwick-body-v4';
 
 function concat(key, n) { const a = core[key], b = extra[key], out = new Float32Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; }
 const geo = new THREE.BufferGeometry();
@@ -1470,7 +1491,7 @@ const eyeMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff2020, blendin
 // sortie de l'orbite (avant + extérieur) : les arcades et la collerette ne masquent plus le halo de trois quarts
 const eyeGlows = SIDES.map(s => {
   const sp = new THREE.Sprite(eyeMat);
-  sp.position.copy(hp(s * 0.122, 0.064, 0.29)).sub(HJ); sp.scale.set(0.3, 0.16, 1); sp.renderOrder = 4;
+  sp.position.copy(hp(s * 0.122, 0.062, 0.285)).sub(HJ); sp.scale.set(0.22, 0.1, 1); sp.renderOrder = 4;
   B.head.add(sp); return sp;
 });
 
@@ -1757,10 +1778,10 @@ function update(state) {
     st.ly * 0.12 * lookW - H * 0.15 - swA * 0.12 + swS * 0.24 + swF * 0.16, ws * 0.025 + swA * 0.06 - swS * 0.05);
   B.ribs.scale.set(1 + br * 0.016 * bA + H * 0.05, 1 + br * 0.008 * bA + H * 0.02, 1 + br * 0.024 * bA + H * 0.07);
   /* --- cou, tête, mâchoire --- */
-  B.neck.rotation.set(Hn * 0.06 - H * 0.15 - S * 0.12 + G * 0.2 + st.lx * 0.4 * lookW + F * 0.08 + swA * 0.16 + swS * 0.08,
-    st.ly * 0.38 * lookW - H * 0.1 + swA * 0.14 - swS * 0.04, -ws * 0.02);
-  B.head.rotation.set(-Hn * 0.26 - H * 0.38 - S * 0.24 + G * 0.12 + st.lx * 0.6 * lookW - sniff * 0.035 + F * 0.12 + br * 0.008 - swA * 0.08 + swS * 0.06,
-    st.ly * 0.5 * lookW + 0.2 * (1 - 0.85 * H) * (1 - swAny) - H * 0.1 + swA * 0.08 + swS * 0.05 + swF * 0.05,
+  B.neck.rotation.set(Hn * 0.06 - H * 0.08 - S * 0.12 + G * 0.2 + st.lx * 0.4 * lookW + F * 0.08 + swA * 0.16 + swS * 0.08,
+    st.ly * 0.38 * lookW + H * 0.12 + swA * 0.14 - swS * 0.04, -ws * 0.02);
+  B.head.rotation.set(-Hn * 0.26 - H * 0.12 - S * 0.24 + G * 0.12 + st.lx * 0.6 * lookW - sniff * 0.035 + F * 0.12 + br * 0.008 - swA * 0.08 + swS * 0.06,
+    st.ly * 0.5 * lookW + 0.28 * (1 - 0.85 * H) * (1 - swAny) + H * 0.34 + swA * 0.08 + swS * 0.05 + swF * 0.05,
     st.lz * lookW + nz(t * 0.13, 7) * 0.04 + G * 0.06 - ws * 0.02 + H * 0.06);
   // posture voûtée au repos (HUNCH au total sur le buste ; le hurlement le redresse) : tête basse projetée en avant
   const hb = 1 - 0.85 * H;
@@ -1771,7 +1792,7 @@ function update(state) {
   B.jaw.rotation.x = 0.13 + br * 0.015 * (0.5 + Hn) + Hn * 0.1 + H * (0.8 + 0.03 * Math.sin(t * 8.3)) + G * 0.3 + swA * 0.1 + swS * 0.3 + swF * 0.12 + F * 0.08 + rumble - sniff * 0.02;
   for (let e = 0; e < 2; e++) {
     const s = SIDES[e], E = st.ear[e], tw = env4(t - E.t0, 0, 0.05, 0.1, 0.38) * E.amp;
-    EARS[e].rotation.set(-0.12 * Hn - 0.55 * H - 0.55 * G + 0.18 * S - 0.45 * tw + nz(t * 0.21, 9 + e) * 0.05 - swS * 0.3 - swA * 0.2, 0, s * (0.18 * tw + 0.1 * Hn + 0.2 * G + 0.12 * H));
+    EARS[e].rotation.set(-0.12 * Hn + 0.25 * H - 0.4 * G + 0.18 * S - 0.45 * tw + nz(t * 0.21, 9 + e) * 0.05 + swS * 0.12 + swA * 0.06, 0, s * (0.18 * tw + 0.1 * Hn + 0.2 * G + 0.12 * H));
   }
   /* --- bras : hurlement = bras grands ouverts vers l'arrière, poignets cassés, griffes déployées --- */
   for (let i = 0; i < 2; i++) {
@@ -1848,10 +1869,10 @@ function update(state) {
   const eyeI = (1.7 + eyeP * 0.35 + Hn * 2.0 + H * 1.2 + G * 1.2 + swS * 1.2 + au.beat * 0.8) * blink;
   // yeux rouge sang ; plus saturés (et plus intenses, voir eyeI) en traque
   _eyeC.copy(blood).lerp(_tmpC2.copy(blood).multiply(blood), Hn * 0.7);
-  U.uBlood.value.copy(_eyeC).multiplyScalar(eyeI * (0.75 + 0.25 * Hn));
-  eyeMat.color.copy(_eyeC).multiplyScalar((0.85 + eyeP * 0.2 + Hn * 0.75 + H * 0.4 + G * 0.3 + au.beat * 0.3) * blink);
+  U.uBlood.value.copy(_eyeC).multiplyScalar(eyeI * (0.6 + 0.4 * Hn));
+  eyeMat.color.copy(_eyeC).multiplyScalar((0.62 + eyeP * 0.16 + Hn * 0.95 + H * 0.4 + G * 0.3 + au.beat * 0.3) * blink);
   const es = (1 + eyeP * 0.08 + Hn * 0.45 + H * 0.2 + G * 0.25 + au.beat * 0.12) * (0.25 + 0.75 * blink);
-  eyeGlows[0].scale.set(0.3 * es, 0.15 * es * (0.35 + 0.65 * blink), 1); eyeGlows[1].scale.copy(eyeGlows[0].scale);
+  eyeGlows[0].scale.set(0.22 * es, 0.1 * es * (0.35 + 0.65 * blink), 1); eyeGlows[1].scale.copy(eyeGlows[0].scale);
   U.uRim.value.copy(RIM).multiplyScalar(0.22).lerp(_tmpC2.copy(blood).multiplyScalar(0.3), Hn);
   U.uRim2.value.copy(RIM).multiplyScalar(0.07).lerp(_tmpC2.copy(blood).multiplyScalar(0.1), Hn * 0.85);
   U.uFill.value.copy(FILL).lerp(_tmpC2.copy(blood).multiplyScalar(0.16), Hn * 0.35).multiplyScalar(1 + au.bass * 0.15);
