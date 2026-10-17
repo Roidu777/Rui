@@ -419,7 +419,7 @@ const abyss = (x, y) => 0.35 + 0.65 * smooth(-22, 4, y);
    ====================================================================== */
 const deckTex = deckTextures(), grateTex = grateTexture();
 const DECK = [[-4.6, 12], [-4.6, -3.4], [-1.4, -3.4], [1.6, -8.6], [12, -8.6], [12, 12]];
-const GRATES = [{ x: -1.15, z: 2.75, w: 1.9, d: 1.1, steam: true }, { x: 2.15, z: -4.9, w: 1.5, d: 1.5 }, { x: -3.3, z: -1.6, w: 1.0, d: 1.4 }];
+const GRATES = [{ x: -1.15, z: 2.75, w: 1.9, d: 1.1, steam: true, glow: 0.4 }, { x: 2.15, z: -4.9, w: 1.5, d: 1.5 }, { x: -3.3, z: -1.6, w: 1.0, d: 1.4 }];
 const deckShape = new THREE.Shape();
 DECK.forEach(([x, z], i) => (i ? deckShape.lineTo(x, -z) : deckShape.moveTo(x, -z)));
 for (const g of GRATES) {
@@ -470,7 +470,7 @@ grateMat.customProgramCacheKey = () => 'zaun-grate';
     for (const [px, pz, sx, sz] of [[g.x, z0, g.w, 0.04], [g.x, z1, g.w, 0.04], [x0, g.z, 0.04, g.d], [x1, g.z, 0.04, g.d]]) {
       B.near.add(G.box, M(px, -depth / 2, pz, 0, 0, 0, sx, depth, sz), C.steelDark);
     }
-    B.glow.add(G.plane, M(g.x, -depth + 0.02, g.z, -PI / 2, 0, 0, g.w, g.d, 1), lin(0.95, 0.95, 0.95), FX_CHEM);
+    { const k = 0.95 * (g.glow || 1); B.glow.add(G.plane, M(g.x, -depth + 0.02, g.z, -PI / 2, 0, 0, g.w, g.d, 1), lin(k, k, k), FX_CHEM); } // la grille au premier plan, plus discrète
     // cadre de la grille
     for (const [px, pz, sx, sz] of [[g.x, z0, g.w + 0.12, 0.08], [g.x, z1, g.w + 0.12, 0.08], [x0, g.z, 0.08, g.d], [x1, g.z, 0.08, g.d]]) {
       B.near.add(G.box, M(px, -0.015, pz, 0, 0, 0, sx, 0.05, sz), C.steel);

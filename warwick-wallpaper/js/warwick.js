@@ -987,7 +987,7 @@ for (const s of SIDES) fur(core, PEC[s], 11, {
 });
 // queue : grandes mèches larges couchées le long du panache (flux continu vers la pointe), peu soulevées
 const tailRoot = (p, nn, out) => out.copy(C.furD).lerp(C.furN, nn.y > 0 ? 0.45 : 0);
-const tailTip = (p, nn, out) => out.copy(C.furD).lerp(C.furN, 0.5 + 0.3 * rnd()).multiplyScalar(nn.y > 0.3 ? 0.8 : nn.y < -0.2 ? 0.65 : 0.9);
+const tailTip = (p, nn, out) => out.copy(C.furD).lerp(C.furN, 0.5 + 0.3 * rnd()).multiplyScalar(nn.y > 0.3 ? 0.55 : nn.y < -0.2 ? 0.5 : 0.65); // pointes sombres : plus d'éclats de verre dans le puits de lumière
 for (let i = 0; i < TAIL_N; i++) {
   const a = TAILP[i], b = TAILP[i + 1], d = b.clone().sub(a).normalize(), R = TAIL_R[i];
   const n = Math.round(3 + 13 * R), tip = Math.max(0, i - (TAIL_N - 4)) / 3; // 0 → 1 sur les trois derniers tronçons
