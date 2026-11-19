@@ -84,6 +84,16 @@ summary{cursor:pointer;font-weight:600}
 .step{display:flex;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:14px;cursor:pointer}
 .step .ic{flex:none;width:26px;text-align:center;font-size:18px}
 .step .d{margin-left:auto;color:var(--muted);white-space:nowrap;font-size:12px}
+.step .ban{flex:none;border:1px solid var(--line);background:var(--bg);border-radius:8px;font-size:14px;padding:2px 6px;line-height:1.4}
+.routecard .via{font-size:12px;color:var(--text);opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.banlist{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.banlist .item{display:flex;align-items:center;gap:8px;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.banlist .item span{flex:1;min-width:0}
+.banlist .item a{color:var(--route);font-size:12px;white-space:nowrap}
+.banlist .item button{border:0;background:none;color:var(--muted);font-size:16px;padding:2px 4px}
+.ban-icon{font-size:18px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.5))}
+.baninfo{font-size:13px;margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--bg);border-left:4px solid #d0021b}
+.baninfo p{margin:3px 0}
 #collapse{position:absolute;top:10px;right:10px;border:0;background:none;color:var(--muted);font-size:18px}
 #planner.min > :not(h1):not(#collapse){display:none}
 /* Navigation */
@@ -252,6 +262,8 @@ body.navigating #recenter{display:block}
     </div>
     <div class="btnrow"><button class="secondary" id="testVoice" type="button">🔊 Tester la voix</button></div>
     <p class="hint" id="iosVoiceHint" hidden>Sur iPhone, le mode silencieux coupe la voix du GPS : désactivez-le (bouton Action ou Centre de contrôle) et montez le volume.</p>
+    <p class="hint" style="margin-top:12px"><b>⛔ Rues interdites aux camions</b> que vous avez signalées. Elles sont évitées dans tous vos trajets. Pour en ajouter : bouton ⛔ dans la feuille de route ou pendant le guidage, ou appui long sur la carte.</p>
+    <div class="banlist" id="banList"></div>
   </details>
 
   <button class="primary" id="calc">Calculer l'itinéraire</button>
@@ -262,6 +274,7 @@ body.navigating #recenter{display:block}
   </div>
   <div id="breaks"></div>
   <div id="belgium"></div>
+  <div id="banInfo"></div>
   <div class="steps" id="steps"></div>
 </section>
 
@@ -284,6 +297,7 @@ body.navigating #recenter{display:block}
   </div>
   <div class="navbtns">
     <button id="mute" aria-label="Voix">🔊</button>
+    <button id="navBan" aria-label="Rue interdite aux camions">⛔</button>
     <button class="stop" id="stop">Arrêter</button>
   </div>
 </div>
@@ -527,10 +541,12 @@ map.on('contextmenu', e => {
   const { lat, lng } = e.latlng;
   const html = `<div style="display:flex;flex-direction:column;gap:6px">
     <button class="secondary" data-k="from">Partir d'ici</button>
-    <button class="secondary" data-k="to">Aller ici</button></div>`;
+    <button class="secondary" data-k="to">Aller ici</button>
+    <button class="secondary" data-k="ban">⛔ Interdit aux camions ici</button></div>`;
   const pop = L.popup().setLatLng(e.latlng).setContent(html).openOn(map);
-  pop.getElement().querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  pop.getElement().querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
     const k = b.dataset.k;
+    if (k === 'ban') { map.closePopup(); return banHere(lat, lng); }
     $(k).value = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     map.closePopup();
     setPlace(k, { lat, lon: lng, name: $(k).value });
@@ -635,7 +651,8 @@ function drawRoutes(fit){
     const d = document.createElement('div');
     d.className = 'routecard' + (i === active ? ' active' : '');
     const tags = [rt.hasToll && 'péages', rt.hasHighway && 'autoroute', rt.hasFerry && 'ferry'].filter(Boolean).join(' · ') || 'sans péage ni autoroute';
-    d.innerHTML = `<b>${fmtDur(rt.summary.time)}</b> · ${fmtKm(rt.summary.length)}<div class="meta">${i === 0 ? 'Recommandé' : 'Alternative ' + i} · ${tags}</div>`;
+    const via = viaRoads(rt);
+    d.innerHTML = `<b>${fmtDur(rt.summary.time)}</b> · ${fmtKm(rt.summary.length)}${via ? `<div class="via">via ${esc(via)}</div>` : ''}<div class="meta">${i === 0 ? 'Recommandé' : 'Alternative ' + i} · ${tags}</div>`;
     d.addEventListener('click', () => { active = i; drawRoutes(false); });
     $('routes').appendChild(d);
   });
@@ -657,11 +674,15 @@ function drawRoutes(fit){
   r.maneuvers.forEach(m => {
     const d = document.createElement('div');
     d.className = 'step';
-    d.innerHTML = `<span class="ic">${icon(m.type)}</span><span>${esc(m.instruction)}</span><span class="d">${m.length ? fmtKm(m.length) : ''}</span>`;
+    const canBan = m.length > 0 && m.end_shape_index > m.begin_shape_index;
+    d.innerHTML = `<span class="ic">${icon(m.type)}</span><span>${esc(m.instruction)}</span><span class="d">${m.length ? fmtKm(m.length) : ''}</span>`
+      + (canBan ? `<button class="ban" aria-label="Rue interdite aux camions" title="Rue interdite aux camions">⛔</button>` : '');
     d.addEventListener('click', () => map.setView(r.shape[m.begin_shape_index], 16));
+    d.querySelector('.ban')?.addEventListener('click', ev => { ev.stopPropagation(); banManeuver(r, m); });
     $('steps').appendChild(d);
   });
   $('goRow').style.display = 'flex';
+  renderBanInfo(r);
 }
 
 function planBreaks(r){
@@ -795,6 +816,7 @@ async function onPos(p){
   const m = r.maneuvers[mi];
   const toNext = Math.max(0, r.cum[m.begin_shape_index] - along);
   const after = r.maneuvers[mi + 1];
+  nav.mi = mi;
 
   $('navIcon').textContent = icon(m.type);
   $('navDist').textContent = fmtDist(toNext);
@@ -1012,20 +1034,138 @@ async function analyze(route){
 
 // Calcul complet : itinéraires + analyse + évitement des tunnels bruxellois pour les > 3,5 t
 async function computeRoutes(from, to, heading){
-  const exclude = [], avoided = [];
-  let rs;
+  const userEx = banPoints(from, to);           // rues interdites signalées par le chauffeur
+  const tunnelEx = [], avoided = [];
+  let useBans = true, rs;
   for (let it = 0; it < 5; it++) {
-    rs = await fetchRoute(from, to, heading, exclude);
+    const exclude = (useBans ? userEx : []).concat(tunnelEx);
+    try { rs = await fetchRoute(from, to, heading, exclude); }
+    catch (e) {
+      if (useBans && userEx.length) { useBans = false; it--; continue; }   // sans issue : on réessaie sans elles
+      throw e;
+    }
     await Promise.all(rs.map(analyze));
     if (W() <= 3.5) break;
     const t = rs.flatMap(r => r.bruTunnels || []);
     if (!t.length) break;
-    t.forEach(x => { exclude.push({ lat: x.lat, lon: x.lon }); if (!avoided.includes(x.name)) avoided.push(x.name); });
+    t.forEach(x => { tunnelEx.push({ lat: x.lat, lon: x.lon }); if (!avoided.includes(x.name)) avoided.push(x.name); });
   }
-  rs.forEach(r => { r.avoidedTunnels = avoided; });
-  rs.snapped = rs.snapped;
+  rs.forEach(r => {
+    r.avoidedTunnels = avoided;
+    r.bansAvoided = useBans ? bansInArea(from, to) : [];
+    r.bansIgnored = !useBans && userEx.length > 0;
+    r.banHits = banHits(r);
+  });
   return rs;
 }
+
+/* ---------- Rues interdites signalées par le chauffeur ----------
+   Panneaux absents de la carte (OpenStreetMap) : le chauffeur marque la rue, elle est évitée à chaque calcul
+   (points d'exclusion transmis au moteur d'itinéraire). Gardé sur le téléphone. */
+let bans = store.get('bans', []);              // [{ id, name, pts: [[lat, lon], …], t }]
+let banLayers = [];
+function saveBans(){ store.set('bans', bans); drawBans(); renderBanList(); }
+function bansInArea(from, to){
+  const pad = 0.15, la0 = Math.min(from.lat, to.lat) - pad, la1 = Math.max(from.lat, to.lat) + pad;
+  const lo0 = Math.min(from.lon, to.lon) - pad * 1.5, lo1 = Math.max(from.lon, to.lon) + pad * 1.5;
+  return bans.filter(b => b.pts.some(p => p[0] >= la0 && p[0] <= la1 && p[1] >= lo0 && p[1] <= lo1));
+}
+function banPoints(from, to){
+  const out = [];
+  for (const b of bansInArea(from, to)) for (const p of b.pts) {
+    // desserte locale : on ne bloque pas la rue de départ ou d'arrivée
+    if (dist(p, [from.lat, from.lon]) < 250 || dist(p, [to.lat, to.lon]) < 250) continue;
+    out.push({ lat: p[0], lon: p[1] });
+  }
+  return out.slice(0, 40);                      // limite du moteur : 50 exclusions (tunnels compris)
+}
+function banHits(r){
+  return bans.filter(b => b.pts.some(p => nearest(r.shape, p, 0).d < 20)).map(b => b.name);
+}
+function pointAt(r, d){
+  let i = 0; while (i < r.cum.length - 2 && r.cum[i + 1] < d) i++;
+  const seg = r.cum[i + 1] - r.cum[i] || 1, t = Math.max(0, Math.min(1, (d - r.cum[i]) / seg));
+  const A = r.shape[i], B = r.shape[i + 1] || A;
+  return [+(A[0] + (B[0] - A[0]) * t).toFixed(6), +(A[1] + (B[1] - A[1]) * t).toFixed(6)];
+}
+// points répartis le long d'un tronçon, à l'écart des carrefours (pour ne pas bloquer les rues qui croisent)
+function samplePoints(r, a, b){
+  const L0 = r.cum[a], L1 = r.cum[b], len = L1 - L0, ds = [];
+  if (len < 120) ds.push(L0 + len / 2);
+  else for (let d = L0 + 60; d < L1 - 40 && ds.length < 6; d += 150) ds.push(d);
+  return ds.map(d => pointAt(r, d));
+}
+function addBan(name, pts){
+  bans.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, pts, t: Date.now() });
+  saveBans();
+}
+function banManeuver(r, m){
+  const name = (m.street_names && m.street_names[0]) || 'cette rue';
+  if (!confirm(`« ${name} » est interdite aux camions ?\n\nElle sera évitée dans tous vos trajets et l'itinéraire sera recalculé.`)) return;
+  addBan(name, samplePoints(r, m.begin_shape_index, m.end_shape_index));
+  if (nav && nav.last) reroute(nav.last, null); else calculate();
+}
+async function banHere(lat, lon){
+  let name = `près de ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  try {     // nom de la rue (une seule requête, sur action du chauffeur)
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=17&accept-language=fr&lat=${lat}&lon=${lon}`);
+    const j = await r.json(); if (j.address?.road) name = j.address.road + (j.address.city || j.address.town || j.address.village ? ', ' + (j.address.city || j.address.town || j.address.village) : '');
+  } catch {}
+  if (!confirm(`Marquer « ${name} » comme interdite aux camions à cet endroit ?\n\nElle sera évitée dans tous vos trajets.`)) return;
+  addBan(name, [[+lat.toFixed(6), +lon.toFixed(6)]]);
+  if (places.from && places.to) calculate();
+}
+function drawBans(){
+  banLayers.forEach(l => l.remove()); banLayers = [];
+  for (const b of bans) {
+    const p = b.pts[Math.floor(b.pts.length / 2)];
+    const mk = L.marker(p, { icon: L.divIcon({ className: 'ban-icon', html: '⛔', iconSize: [20, 20], iconAnchor: [10, 10] }) })
+      .bindPopup(`<b>Interdit aux camions</b><br>${esc(b.name)}`).addTo(map);
+    banLayers.push(mk);
+  }
+}
+function renderBanList(){
+  const box = $('banList'); box.innerHTML = '';
+  if (!bans.length) { box.innerHTML = '<p class="hint" style="margin:0">Aucune pour le moment.</p>'; return; }
+  for (const b of bans) {
+    const p = b.pts[0], row = document.createElement('div');
+    row.className = 'item';
+    row.innerHTML = `<span>⛔ ${esc(b.name)}</span>`
+      + `<a href="https://www.openstreetmap.org/note/new#map=19/${p[0]}/${p[1]}" target="_blank" rel="noopener">Signaler à OSM</a>`
+      + `<button aria-label="Retirer">✕</button>`;
+    row.querySelector('span').addEventListener('click', () => map.setView(p, 17));
+    row.querySelector('button').addEventListener('click', () => {
+      if (!confirm(`Ne plus éviter « ${b.name} » ?`)) return;
+      bans = bans.filter(x => x.id !== b.id); saveBans();
+      if (places.from && places.to && !nav) calculate();
+    });
+    box.appendChild(row);
+  }
+}
+function renderBanInfo(r){
+  const box = $('banInfo'), lines = [];
+  if (r.bansAvoided?.length) lines.push(`<p>⛔ Rues interdites évitées : ${r.bansAvoided.map(b => esc(b.name)).join(', ')}</p>`);
+  if (r.bansIgnored) lines.push(`<p class="bad" style="color:var(--warn);font-weight:600">Impossible d'éviter vos rues interdites sur ce trajet : suivez la signalisation.</p>`);
+  if (r.banHits?.length) lines.push(`<p style="color:var(--warn);font-weight:600">⚠ Le trajet passe encore par : ${r.banHits.map(esc).join(', ')}</p>`);
+  box.innerHTML = lines.length ? `<div class="baninfo">${lines.join('')}</div>` : '';
+}
+// les 3 routes les plus longues du trajet, dans l'ordre : « via Chaussée de La Hulpe · R0 · E40 »
+function viaRoads(rt){
+  const len = new Map(), order = [];
+  for (const m of rt.maneuvers) {
+    const n = (m.street_names || [])[0]; if (!n || !m.length) continue;
+    if (!len.has(n)) { len.set(n, 0); order.push(n); }
+    len.set(n, len.get(n) + m.length);
+  }
+  const top = [...len.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
+  return order.filter(n => top.includes(n)).join(' · ');
+}
+$('navBan').addEventListener('click', () => {
+  if (!nav) return;
+  const r = nav.route, m = r.maneuvers[nav.mi ?? 0];
+  if (m) banManeuver(r, m);
+});
+drawBans(); renderBanList();
 
 function renderBelgium(r){
   const box = $('belgium');
