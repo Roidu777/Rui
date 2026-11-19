@@ -11,6 +11,9 @@ GPS poids lourd dans le navigateur, en un seul fichier (`index.html`), sans comp
 - Recherche d'adresse avec suggestions (Photon) et recherche de secours sur Entrée (Nominatim) si les suggestions ne répondent pas. Adresses belges dans l'ordre belge (« Rue de la Loi 16 »), bouton « Ma position », clic droit (ou appui long) sur la carte pour choisir départ/arrivée.
 - Si le départ ou l'arrivée tombe dans une rue interdite aux PL, le point est accroché à la route accessible la plus proche.
 - **Rues interdites signalées par le chauffeur** : les interdictions viennent d'OpenStreetMap, qui ne contient pas tous les panneaux (par exemple un C23 « 3,5 t » posé par une commune). Le bouton ⛔ (dans la feuille de route, pendant le guidage, ou par appui long sur la carte) marque une rue comme interdite aux camions : elle est évitée dans tous les trajets suivants, l'itinéraire est recalculé, et l'appli prévient si un trajet y passe encore. La liste se gère dans Options, avec un lien « Signaler à OSM » pour corriger la carte pour tout le monde. La rue de départ ou d'arrivée n'est jamais bloquée (desserte locale).
+- **Desserte locale** : une rue interdite reste autorisée si le départ ou l'arrivée s'y trouve (panneaux « excepté desserte locale »).
+- **Interdictions intégrées** : panneaux vérifiés sur place mais absents d'OpenStreetMap, appliqués pour tous les trajets. Pour l'instant : chaussée de Saint-Job à Uccle, du rond-point de la rue de Wansijn à la place de Saint-Job (C21 3,5 t, excepté desserte locale).
+- **Grands axes d'abord** : chaque passage vers une route plus petite coûte 3 minutes au calcul, pour que le camion reste sur les grands axes au lieu de couper par les rues résidentielles.
 - Chaque itinéraire proposé indique ses grands axes (« via E411 · N25 · N240 ») pour choisir en connaissance de cause.
 
 ## Précision Belgique 🇧🇪

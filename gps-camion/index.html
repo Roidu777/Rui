@@ -568,7 +568,10 @@ function buildRequest(from, to, heading, snap, exclude){
       hazmat: !!veh.hazmat, top_speed: veh.vs,
       use_tolls: opts.noToll ? 0 : 0.5,
       use_highways: opts.noHighway ? 0 : 1,
-      use_ferry: opts.noFerry ? 0 : 0.5
+      use_ferry: opts.noFerry ? 0 : 0.5,
+      // 3 min de pénalité à chaque passage vers une route plus petite : le camion reste sur les grands axes
+      // au lieu de couper par les rues résidentielles (souvent « 3,5 t excepté desserte locale »)
+      low_class_penalty: 180
     }},
     alternates: heading != null ? 0 : 2,
     ...(exclude && exclude.length ? { exclude_locations: exclude } : {}),
@@ -1050,9 +1053,11 @@ async function computeRoutes(from, to, heading){
     if (!t.length) break;
     t.forEach(x => { tunnelEx.push({ lat: x.lat, lon: x.lon }); if (!avoided.includes(x.name)) avoided.push(x.name); });
   }
+  const split = bansSplit(from, to);
   rs.forEach(r => {
     r.avoidedTunnels = avoided;
-    r.bansAvoided = useBans ? bansInArea(from, to) : [];
+    r.bansAvoided = useBans ? split.applied : [];
+    r.bansLocal = split.local;
     r.bansIgnored = !useBans && userEx.length > 0;
     r.banHits = banHits(r);
   });
@@ -1063,24 +1068,34 @@ async function computeRoutes(from, to, heading){
    Panneaux absents de la carte (OpenStreetMap) : le chauffeur marque la rue, elle est évitée à chaque calcul
    (points d'exclusion transmis au moteur d'itinéraire). Gardé sur le téléphone. */
 let bans = store.get('bans', []);              // [{ id, name, pts: [[lat, lon], …], t }]
+// Interdictions vérifiées sur place mais absentes d'OpenStreetMap, intégrées pour tous les trajets.
+// Points au milieu des tronçons, à l'écart des carrefours (voies OSM 30286917 et 27808432).
+const KNOWN_BANS = [
+  { id: 'be-uccle-saint-job', builtin: true,
+    name: 'Chaussée de Saint-Job (Uccle), du rond-point de la rue de Wansijn à la place de Saint-Job',
+    sign: 'C21 3,5 t, excepté desserte locale',
+    pts: [[50.792618, 4.360317], [50.792926, 4.361501], [50.793251, 4.362673], [50.794052, 4.364536]] }
+];
+const allBans = () => KNOWN_BANS.concat(bans);
 let banLayers = [];
 function saveBans(){ store.set('bans', bans); drawBans(); renderBanList(); }
 function bansInArea(from, to){
   const pad = 0.15, la0 = Math.min(from.lat, to.lat) - pad, la1 = Math.max(from.lat, to.lat) + pad;
   const lo0 = Math.min(from.lon, to.lon) - pad * 1.5, lo1 = Math.max(from.lon, to.lon) + pad * 1.5;
-  return bans.filter(b => b.pts.some(p => p[0] >= la0 && p[0] <= la1 && p[1] >= lo0 && p[1] <= lo1));
+  return allBans().filter(b => b.pts.some(p => p[0] >= la0 && p[0] <= la1 && p[1] >= lo0 && p[1] <= lo1));
+}
+// Desserte locale : si le départ ou l'arrivée est dans la rue interdite, on peut y circuler
+const onBan = (b, p) => (b.pts.length > 1 ? nearest(b.pts, [p.lat, p.lon], 0).d : dist(b.pts[0], [p.lat, p.lon])) < 40;
+function bansSplit(from, to){
+  const area = bansInArea(from, to);
+  return { applied: area.filter(b => !onBan(b, from) && !onBan(b, to)), local: area.filter(b => onBan(b, from) || onBan(b, to)) };
 }
 function banPoints(from, to){
-  const out = [];
-  for (const b of bansInArea(from, to)) for (const p of b.pts) {
-    // desserte locale : on ne bloque pas la rue de départ ou d'arrivée
-    if (dist(p, [from.lat, from.lon]) < 250 || dist(p, [to.lat, to.lon]) < 250) continue;
-    out.push({ lat: p[0], lon: p[1] });
-  }
-  return out.slice(0, 40);                      // limite du moteur : 50 exclusions (tunnels compris)
+  return bansSplit(from, to).applied.flatMap(b => b.pts.map(p => ({ lat: p[0], lon: p[1] }))).slice(0, 40);   // limite : 50 exclusions
 }
 function banHits(r){
-  return bans.filter(b => b.pts.some(p => nearest(r.shape, p, 0).d < 20)).map(b => b.name);
+  const local = r.bansLocal || [];
+  return allBans().filter(b => !local.includes(b) && b.pts.some(p => nearest(r.shape, p, 0).d < 20)).map(b => b.name);
 }
 function pointAt(r, d){
   let i = 0; while (i < r.cum.length - 2 && r.cum[i + 1] < d) i++;
@@ -1117,24 +1132,23 @@ async function banHere(lat, lon){
 }
 function drawBans(){
   banLayers.forEach(l => l.remove()); banLayers = [];
-  for (const b of bans) {
+  for (const b of allBans()) {
     const p = b.pts[Math.floor(b.pts.length / 2)];
     const mk = L.marker(p, { icon: L.divIcon({ className: 'ban-icon', html: '⛔', iconSize: [20, 20], iconAnchor: [10, 10] }) })
-      .bindPopup(`<b>Interdit aux camions</b><br>${esc(b.name)}`).addTo(map);
+      .bindPopup(`<b>Interdit aux camions</b><br>${esc(b.name)}${b.sign ? `<br><small>${esc(b.sign)}</small>` : ''}`).addTo(map);
     banLayers.push(mk);
   }
 }
 function renderBanList(){
   const box = $('banList'); box.innerHTML = '';
-  if (!bans.length) { box.innerHTML = '<p class="hint" style="margin:0">Aucune pour le moment.</p>'; return; }
-  for (const b of bans) {
+  for (const b of allBans()) {
     const p = b.pts[0], row = document.createElement('div');
     row.className = 'item';
-    row.innerHTML = `<span>⛔ ${esc(b.name)}</span>`
+    row.innerHTML = `<span>⛔ ${esc(b.name)}${b.builtin ? `<br><small style="color:var(--muted)">${esc(b.sign)} · intégrée à l'appli</small>` : ''}</span>`
       + `<a href="https://www.openstreetmap.org/note/new#map=19/${p[0]}/${p[1]}" target="_blank" rel="noopener">Signaler à OSM</a>`
-      + `<button aria-label="Retirer">✕</button>`;
+      + (b.builtin ? '' : `<button aria-label="Retirer">✕</button>`);
     row.querySelector('span').addEventListener('click', () => map.setView(p, 17));
-    row.querySelector('button').addEventListener('click', () => {
+    row.querySelector('button')?.addEventListener('click', () => {
       if (!confirm(`Ne plus éviter « ${b.name} » ?`)) return;
       bans = bans.filter(x => x.id !== b.id); saveBans();
       if (places.from && places.to && !nav) calculate();
@@ -1145,6 +1159,7 @@ function renderBanList(){
 function renderBanInfo(r){
   const box = $('banInfo'), lines = [];
   if (r.bansAvoided?.length) lines.push(`<p>⛔ Rues interdites évitées : ${r.bansAvoided.map(b => esc(b.name)).join(', ')}</p>`);
+  if (r.bansLocal?.length) lines.push(`<p>🚚 Desserte locale : départ ou arrivée dans ${r.bansLocal.map(b => esc(b.name)).join(', ')}, passage autorisé.</p>`);
   if (r.bansIgnored) lines.push(`<p class="bad" style="color:var(--warn);font-weight:600">Impossible d'éviter vos rues interdites sur ce trajet : suivez la signalisation.</p>`);
   if (r.banHits?.length) lines.push(`<p style="color:var(--warn);font-weight:600">⚠ Le trajet passe encore par : ${r.banHits.map(esc).join(', ')}</p>`);
   box.innerHTML = lines.length ? `<div class="baninfo">${lines.join('')}</div>` : '';
