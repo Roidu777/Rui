@@ -386,12 +386,9 @@ function setupSearch(key){
     if (q.length < 3) { box.hidden = true; return; }
     timer = setTimeout(async () => {
       ctrl?.abort(); ctrl = new AbortController();
-      const c = map.getCenter();
       try {
-        const r = await fetch(`${PHOTON}?q=${encodeURIComponent(q)}&limit=6&lang=fr&lat=${c.lat}&lon=${c.lng}`, { signal: ctrl.signal });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const j = await r.json();
-        items = j.features.map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], ...label(f.properties) }));
+        const feats = await photonSearch(q, ctrl.signal);
+        items = feats.map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], ...label(f.properties) }));
         sel = -1; render();
         if (!items.length) info('Aucune suggestion. Appuyez sur Entrée pour une recherche complète.');
       } catch (e) {
@@ -438,6 +435,26 @@ function setupSearch(key){
     setPlace(key, { lat: it.lat, lon: it.lon, name: input.value });
   }
 }
+// « Rue de la… », « Chaussée de… », « Kerkstraat… » sans numéro : on cherche des rues, pas des bâtiments
+// dont le nom contient les mêmes mots (théâtres, administrations…)
+const STREET_FR = /^(rue|r\.|avenue|av\.?|boulevard|bd|bld|chauss[ée]e|ch[ée]e|place|pl\.|square|quai|route|rte|chemin|dr[èe]ve|all[ée]e|impasse|clos|rond-point|sentier|galerie|parvis|passage|esplanade|promenade|voie|cours?)(?=[\s,.]|$)/i;
+const STREET_NL = /^\S*(straat|laan|steenweg|plein|weg|dreef|kaai|lei|vest|singel|baan|dijk|strasse|straße)(?=[\s,.]|$)/i;
+const isStreetQuery = q => !/\d/.test(q) && (STREET_FR.test(q.trim()) || STREET_NL.test(q.trim()));
+async function photonSearch(q, signal){
+  const c = map.getCenter();
+  const base = `${PHOTON}?q=${encodeURIComponent(q)}&limit=6&lang=fr&lat=${c.lat}&lon=${c.lng}`;
+  const get = async extra => {
+    const r = await fetch(base + extra, { signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return (await r.json()).features || [];
+  };
+  if (isStreetQuery(q)) {
+    try { const f = await get('&layer=street'); if (f.length) return f; }
+    catch (e) { if (e.name === 'AbortError') throw e; }
+  }
+  return get('');
+}
+
 // Belgique : numéro après la rue (« Rue de la Loi 16 ») ; France : avant (« 16 rue de Rivoli »)
 function streetLine(street, num, cc){
   if (!street) return '';
@@ -458,7 +475,8 @@ async function geocodeFallback(q){
   if (wait > 0) await new Promise(r => setTimeout(r, wait));
   lastNominatim = Date.now();
   // pas de biais sur la zone affichée : « Namur » doit donner la ville, pas la Porte de Namur à Bruxelles
-  const r = await fetch(`${NOMINATIM}?format=jsonv2&limit=6&addressdetails=1&accept-language=fr&q=${encodeURIComponent(q)}`);
+  const r = await fetch(`${NOMINATIM}?format=jsonv2&limit=6&addressdetails=1&accept-language=fr&q=${encodeURIComponent(q)}`
+    + (isStreetQuery(q) ? '&layer=address' : ''));
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return (await r.json()).map(x => {
     const a = x.address || {};
@@ -1178,11 +1196,33 @@ updateInsets();
 
 // Pendant la saisie sur téléphone, le panneau passe en haut pour ne pas être caché par le clavier
 $('planner').addEventListener('focusin', e => {
-  if (e.target.matches('input[type=text], input[type=number]') && matchMedia('(max-width:600px)').matches) $('planner').classList.add('typing');
+  if (e.target.matches('input[type=text], input[type=number]') && matchMedia('(max-width:600px)').matches) {
+    $('planner').classList.add('typing'); placeTyping(); setTimeout(placeTyping, 350);
+  }
 });
 $('planner').addEventListener('focusout', () => setTimeout(() => {
-  if (!$('planner').contains(document.activeElement) || !document.activeElement.matches('input')) $('planner').classList.remove('typing');
+  if (!$('planner').contains(document.activeElement) || !document.activeElement.matches('input')) {
+    $('planner').classList.remove('typing'); placeTyping();
+    if (window.scrollY) window.scrollTo(0, 0);   // iOS laisse parfois la page décalée après le clavier
+  }
 }, 250));
+
+// Quand le clavier s'ouvre, l'iPhone fait glisser la zone visible : sans correction, le champ de saisie
+// part sous l'heure en haut de l'écran. On place le panneau dans la zone réellement visible.
+const safeProbe = document.createElement('div');
+safeProbe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top, 0px);visibility:hidden;pointer-events:none';
+document.body.appendChild(safeProbe);
+function placeTyping(){
+  const pl = $('planner'), vv = window.visualViewport;
+  if (!pl.classList.contains('typing') || !vv) { pl.style.top = ''; pl.style.maxHeight = ''; return; }
+  const minTop = Math.max(safeProbe.offsetHeight, isIOS ? 48 : 0);   // sous l'heure et la batterie
+  pl.style.top = Math.round(vv.offsetTop + minTop + 8) + 'px';
+  pl.style.maxHeight = Math.max(160, Math.round(vv.height - minTop - 16)) + 'px';
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', placeTyping);
+  window.visualViewport.addEventListener('scroll', placeTyping);
+}
 
 // Installation sur l'écran d'accueil
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
