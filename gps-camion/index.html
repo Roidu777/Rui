@@ -18,6 +18,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 :root{
+  --top-inset:env(safe-area-inset-top, 0px);
   --bg:#f4f5f7; --panel:#ffffff; --text:#14181f; --muted:#5b6472; --line:#dde1e7;
   --accent:#e8590c; --accent-text:#ffffff; --ok:#2b8a3e; --warn:#c92a2a; --route:#1971c2; --alt:#868e96;
   --shadow:0 4px 18px rgba(0,0,0,.15);
@@ -35,6 +36,8 @@
   --shadow:0 4px 18px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
+/* iPhone dans le navigateur : la page passe sous l'heure et la batterie, on garde ce bandeau libre */
+html.ios-browser{--top-inset:max(env(safe-area-inset-top, 0px), 54px)}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top, 0px);background:#14181f;opacity:.9;z-index:1100;pointer-events:none}
 [hidden]{display:none !important}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
@@ -42,9 +45,9 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
 #map{position:fixed;inset:0;z-index:0}
 button{font:inherit;cursor:pointer;touch-action:manipulation}
 .panel{position:fixed;z-index:500;background:var(--panel);color:var(--text);box-shadow:var(--shadow);border-radius:14px}
-#planner{top:calc(12px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left));width:min(380px,calc(100vw - 24px));
-  max-height:calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;overscroll-behavior:contain;padding:14px}
+#planner{top:calc(12px + var(--top-inset));left:calc(12px + env(safe-area-inset-left));width:min(380px,calc(100vw - 24px));
+  max-height:calc(100vh - 24px - var(--top-inset) - env(safe-area-inset-bottom));
+  max-height:calc(100dvh - 24px - var(--top-inset) - env(safe-area-inset-bottom));overflow:auto;overscroll-behavior:contain;padding:14px}
 #planner h1{font-size:18px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
 #planner h1 span.badge{font-size:11px;font-weight:600;background:var(--accent);color:var(--accent-text);padding:2px 7px;border-radius:99px}
 .field{position:relative;margin-bottom:8px}
@@ -84,7 +87,7 @@ summary{cursor:pointer;font-weight:600}
 #collapse{position:absolute;top:10px;right:10px;border:0;background:none;color:var(--muted);font-size:18px}
 #planner.min > :not(h1):not(#collapse){display:none}
 /* Navigation */
-#navtop{top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));padding:12px 14px;display:none;align-items:center;gap:14px;background:#1b5e20;color:#fff}
+#navtop{top:calc(8px + var(--top-inset));left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));padding:12px 14px;display:none;align-items:center;gap:14px;background:#1b5e20;color:#fff}
 #navtop .big{font-size:40px;line-height:1;width:48px;text-align:center}
 #navtop .dist{font-size:28px;font-weight:800}
 #navtop .instr{font-size:17px}
@@ -137,8 +140,11 @@ body.navigating #recenter{display:block}
   #planner{top:auto;bottom:0;left:0;width:100%;max-height:62vh;max-height:62dvh;border-radius:14px 14px 0 0;
     padding:12px max(16px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))}
   /* pendant la saisie, le panneau monte en haut de l'écran pour rester au-dessus du clavier */
-  #planner.typing{top:calc(8px + env(safe-area-inset-top));bottom:auto;left:8px;width:calc(100% - 16px);border-radius:14px;
-    max-height:calc(100dvh - 16px - env(safe-area-inset-top));padding-bottom:12px}
+  #planner.typing{position:absolute;top:0;bottom:auto;left:0;width:100%;min-height:100%;max-height:none;overflow:visible;
+    border-radius:0;box-shadow:none;padding-top:calc(10px + var(--top-inset));padding-bottom:90vh}
+  #planner.typing #collapse,#planner.typing .banner{display:none}
+  #planner.typing .field{scroll-margin-top:calc(8px + var(--top-inset))}
+  body.typing .leaflet-control-container{display:none}
   #navtop .dist{font-size:24px}
   #navtop .instr{font-size:15px}
   #navbottom{padding:8px 10px;gap:8px}
@@ -1194,39 +1200,52 @@ if ('ResizeObserver' in window) {
 window.addEventListener('resize', updateInsets);
 updateInsets();
 
-// Pendant la saisie sur téléphone, le panneau passe en haut pour ne pas être caché par le clavier
-$('planner').addEventListener('focusin', e => {
-  if (e.target.matches('input[type=text], input[type=number]') && matchMedia('(max-width:600px)').matches) {
-    $('planner').classList.add('typing'); placeTyping(); setTimeout(placeTyping, 350);
+// Saisie sur téléphone : la recherche s'ouvre en plein écran, champ en haut, AVANT que le clavier apparaisse.
+// Le panneau est alors dans le flux normal de la page : l'iPhone n'a plus besoin de faire glisser l'écran
+// pour montrer le champ, qui ne peut donc plus partir sous l'heure.
+const isPhone = () => matchMedia('(max-width:600px)').matches;
+const FIELD = 'input[type=text], input[type=number]';
+function enterTyping(el){
+  if (!isPhone()) return;
+  if (!$('planner').classList.contains('typing')) {
+    $('planner').classList.add('typing'); document.body.classList.add('typing');
   }
-});
+  // le champ actif monte tout en haut : la place sous lui reste libre pour les suggestions
+  requestAnimationFrame(() => el?.closest('.field')?.scrollIntoView({ block: 'start' }));
+}
+function leaveTyping(){
+  if (!$('planner').classList.contains('typing')) return;
+  $('planner').classList.remove('typing'); document.body.classList.remove('typing');
+  window.scrollTo(0, 0);
+  updateInsets();
+}
+let touch0 = null;
+$('planner').addEventListener('touchstart', e => {
+  const t = e.touches[0]; touch0 = t ? { x: t.clientX, y: t.clientY, moved: false } : null;
+}, { passive: true });
+$('planner').addEventListener('touchmove', e => {
+  const t = e.touches[0];
+  if (touch0 && t && Math.hypot(t.clientX - touch0.x, t.clientY - touch0.y) > 10) touch0.moved = true;
+}, { passive: true });
+$('planner').addEventListener('touchend', e => {
+  const el = e.target;
+  if (!el.matches || !el.matches(FIELD) || document.activeElement === el || !isPhone() || touch0?.moved) return;
+  e.preventDefault();                 // on ouvre nous-mêmes le champ, après avoir placé la recherche en haut
+  enterTyping(el);
+  el.focus();
+  try { const n = el.value.length; el.setSelectionRange(n, n); } catch {}
+}, { passive: false });
+$('planner').addEventListener('focusin', e => { if (e.target.matches(FIELD)) enterTyping(e.target); });
 $('planner').addEventListener('focusout', () => setTimeout(() => {
-  if (!$('planner').contains(document.activeElement) || !document.activeElement.matches('input')) {
-    $('planner').classList.remove('typing'); placeTyping();
-    if (window.scrollY) window.scrollTo(0, 0);   // iOS laisse parfois la page décalée après le clavier
-  }
+  const a = document.activeElement;
+  if (!a || !$('planner').contains(a) || !a.matches(FIELD)) leaveTyping();
 }, 250));
-
-// Quand le clavier s'ouvre, l'iPhone fait glisser la zone visible : sans correction, le champ de saisie
-// part sous l'heure en haut de l'écran. On place le panneau dans la zone réellement visible.
-const safeProbe = document.createElement('div');
-safeProbe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top, 0px);visibility:hidden;pointer-events:none';
-document.body.appendChild(safeProbe);
-function placeTyping(){
-  const pl = $('planner'), vv = window.visualViewport;
-  if (!pl.classList.contains('typing') || !vv) { pl.style.top = ''; pl.style.maxHeight = ''; return; }
-  const minTop = Math.max(safeProbe.offsetHeight, isIOS ? 48 : 0);   // sous l'heure et la batterie
-  pl.style.top = Math.round(vv.offsetTop + minTop + 8) + 'px';
-  pl.style.maxHeight = Math.max(160, Math.round(vv.height - minTop - 16)) + 'px';
-}
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', placeTyping);
-  window.visualViewport.addEventListener('scroll', placeTyping);
-}
 
 // Installation sur l'écran d'accueil
 const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+document.documentElement.classList.toggle('ios-browser', isIOS && !standalone);
+updateInsets();
 let installEvent = null;
 function offerInstall(text, button){
   if (standalone || store.get('installDismissed', false)) return;
