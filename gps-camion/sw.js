@@ -3,7 +3,7 @@
 // - page : réseau d'abord (toujours la dernière version), cache si pas de réseau
 // - tuiles de carte : réseau d'abord, cache de secours (tunnels, zones sans signal)
 // - itinéraires et recherche d'adresses : jamais en cache (toujours le réseau)
-const VERSION = '2026-11-19.1';
+const VERSION = '2026-11-19.2';
 const SHELL = 'gpscamion-shell-' + VERSION;
 const TILES = 'gpscamion-tiles';
 const MAX_TILES = 3000;          // ≈ 60–90 Mo de carte au maximum

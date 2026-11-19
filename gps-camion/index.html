@@ -35,6 +35,7 @@
   --shadow:0 4px 18px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top, 0px);background:#14181f;opacity:.9;z-index:1100;pointer-events:none}
 [hidden]{display:none !important}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
@@ -243,6 +244,8 @@ body.navigating #recenter{display:block}
       <label><input type="checkbox" id="noFerry"> Éviter les ferrys</label>
       <label><input type="checkbox" id="voice" checked> Guidage vocal</label>
     </div>
+    <div class="btnrow"><button class="secondary" id="testVoice" type="button">🔊 Tester la voix</button></div>
+    <p class="hint" id="iosVoiceHint" hidden>Sur iPhone, le mode silencieux coupe la voix du GPS : désactivez-le (bouton Action ou Centre de contrôle) et montez le volume.</p>
   </details>
 
   <button class="primary" id="calc">Calculer l'itinéraire</button>
@@ -490,7 +493,7 @@ $('useLoc').addEventListener('click', () => {
   msg('Recherche de votre position…');
   navigator.geolocation.getCurrentPosition(p => {
     $('from').value = 'Ma position';
-    msg('');
+    msg(p.coords.accuracy > 1000 ? approxText(p.coords.accuracy) : '', p.coords.accuracy > 1000);
     setPlace('from', { lat: p.coords.latitude, lon: p.coords.longitude, name: 'Ma position' });
   }, e => msg(geoError(e), true), { enableHighAccuracy: true, timeout: 15000 });
 });
@@ -708,6 +711,10 @@ async function onPos(p){
   // compteur de temps de conduite (en mouvement > 5 km/h)
   if (nav.lastT && speed != null && speed > 5) nav.driven += (now - nav.lastT) / 1000;
   nav.lastT = now;
+  if ((p.coords.accuracy || 0) > 1000) {
+    nav.approxN = (nav.approxN || 0) + 1;
+    if (nav.approxN === 5) showAlert(approxText(p.coords.accuracy));
+  } else nav.approxN = 0;
 
   // position sur le tracé
   const r = nav.route;
@@ -1041,14 +1048,24 @@ function encode(pts, precision = 6){
 
 /* ---------- Voix ---------- */
 let frVoice = null;
-function pickVoice(){ frVoice = speechSynthesis.getVoices().find(v => v.lang?.startsWith('fr')) || null; }
-if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
-function say(text){
-  if (!opts.voice || !('speechSynthesis' in window)) return;
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'fr-FR'; if (frVoice) u.voice = frVoice;
-  speechSynthesis.cancel(); speechSynthesis.speak(u);
+function pickVoice(){
+  const vs = speechSynthesis.getVoices().filter(v => /^fr/i.test(v.lang || ''));
+  frVoice = vs.find(v => /fr[-_]BE/i.test(v.lang)) || vs.find(v => /fr[-_]FR/i.test(v.lang)) || vs[0] || null;
 }
+if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+function speakNow(text){
+  if (!('speechSynthesis' in window)) return false;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = frVoice ? frVoice.lang : 'fr-FR'; if (frVoice) u.voice = frVoice;
+  if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+  return true;
+}
+function say(text){ if (opts.voice) speakNow(text); }
+$('testVoice').addEventListener('click', () => {
+  if (!speakNow('Dans trois cents mètres, tournez à droite. Le guidage vocal fonctionne.'))
+    msg('La voix n\'est pas disponible dans ce navigateur.', true);
+});
 
 /* ---------- Utilitaires ---------- */
 function decode(str, precision = 6){
@@ -1187,7 +1204,14 @@ $('installBtn').addEventListener('click', async () => {
 });
 $('installClose').addEventListener('click', () => { $('install').hidden = true; store.set('installDismissed', true); });
 window.addEventListener('appinstalled', () => { $('install').hidden = true; });
-if (isIOS && !standalone) offerInstall('Pour l\'installer sur l\'iPhone : dans Safari, touchez Partager (carré avec une flèche), puis « Sur l\'écran d\'accueil ».', false);
+if (isIOS && !standalone) offerInstall('Pour installer l\'appli sur votre iPhone : dans Safari, touchez le bouton ••• à côté de l\'adresse, puis Partager, puis « Sur l\'écran d\'accueil ». Gardez « Ouvrir comme app web » activé et touchez Ajouter.', false);
+if (isIOS) $('iosVoiceHint').hidden = false;
+function approxText(acc){
+  const km = acc >= 1500 ? `± ${Math.round(acc / 1000)} km` : `± ${Math.round(acc)} m`;
+  return `Position approximative (${km}) : activez « Position exacte »` + (isIOS
+    ? ' pour les sites web Safari (Réglages > Confidentialité et sécurité > Service de localisation).'
+    : ' dans les réglages de localisation du téléphone.');
+}
 
 // Départ = ma position, si la localisation est déjà autorisée (pas de demande au démarrage)
 (async () => {
@@ -1198,6 +1222,7 @@ if (isIOS && !standalone) offerInstall('Pour l\'installer sur l\'iPhone : dans S
     navigator.geolocation.getCurrentPosition(p => {
       if (places.from || $('from').value.trim()) return;
       $('from').value = 'Ma position';
+      if (p.coords.accuracy > 1000) msg(approxText(p.coords.accuracy), true);
       setPlace('from', { lat: p.coords.latitude, lon: p.coords.longitude, name: 'Ma position' });
     }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
   } catch {}
@@ -1212,6 +1237,7 @@ if (pending && pending.to && Date.now() - pending.t < 12 * 3600 * 1000) {
 $('resumeNo').addEventListener('click', () => { $('resume').hidden = true; store.set('activeNav', null); });
 $('resumeBtn').addEventListener('click', () => {
   $('resume').hidden = true;
+  say('Reprise du guidage.');   // dit pendant le toucher : débloque la voix sur iPhone
   if (!navigator.geolocation) return msg('Géolocalisation indisponible sur cet appareil.', true);
   places.to = pending.to; $('to').value = pending.toLabel || '';
   toMarker?.remove(); toMarker = L.marker([pending.to.lat, pending.to.lon], { icon: pin('#c92a2a') }).addTo(map);

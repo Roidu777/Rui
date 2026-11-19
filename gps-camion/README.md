@@ -34,9 +34,14 @@ L'appli s'installe sur l'écran d'accueil et s'ouvre en plein écran, comme une 
 1. **Mettre l'appli en ligne (une seule fois)** : sur GitHub, dépôt `Roidu777/Rui` → **Settings** → **Pages** → *Build and deployment* → Source **Deploy from a branch** → branche **`claude/sleepy-ride-l5zp1q`**, dossier **`/ (root)`** → **Save**. Après une ou deux minutes, l'appli est à l'adresse :
    **https://roidu777.github.io/Rui/gps-camion/**
 2. **Ouvrir cette adresse sur le téléphone**, puis l'installer :
-   - iPhone : dans **Safari**, bouton **Partager** (carré avec une flèche) → **Sur l'écran d'accueil**.
+   - iPhone (iOS 26 ou plus récent) : dans **Safari**, bouton **•••** à côté de l'adresse → **Partager** → **Sur l'écran d'accueil** → laisser **Ouvrir comme app web** activé → **Ajouter**. Si « Sur l'écran d'accueil » n'apparaît pas, l'ajouter avec **Modifier les actions** en bas de la liste.
    - Android : dans **Chrome**, bouton **Installer** affiché dans l'appli, ou menu **⋮** → **Installer l'application**.
 3. **Autoriser la localisation** quand le téléphone le demande.
+
+Réglages iPhone à vérifier :
+- **Position exacte** : Réglages → Confidentialité et sécurité → Service de localisation (activé), puis pour les sites web Safari : « Lorsque l'app est active » et **Position exacte** activée. Sans elle, la position n'est juste qu'à quelques kilomètres près ; l'appli le signale.
+- **Mode silencieux coupé** (bouton Action ou Centre de contrôle) : sinon la voix du GPS ne s'entend pas. Le bouton **Tester la voix** (menu Options) permet de vérifier avant de partir.
+- Une appli web ne peut pas s'afficher sur l'écran **CarPlay** : utiliser le téléphone sur un support.
 
 Conseils de route :
 - Laissez l'appli **au premier plan**. Une appli web ne reçoit plus le GPS quand on change d'appli ou qu'on verrouille l'écran. Pendant le guidage, l'écran reste allumé automatiquement.
