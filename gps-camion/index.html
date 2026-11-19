@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#14181f">
 <title>GPS Camion</title>
+<meta name="description" content="GPS poids lourd : itinéraires selon le gabarit, limitations PL belges, péage kilométrique, LEZ et guidage vocal.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GPS Camion">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -28,17 +37,19 @@
 *{box-sizing:border-box}
 [hidden]{display:none !important}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
-  font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
 #map{position:fixed;inset:0;z-index:0}
-button{font:inherit;cursor:pointer}
+button{font:inherit;cursor:pointer;touch-action:manipulation}
 .panel{position:fixed;z-index:500;background:var(--panel);color:var(--text);box-shadow:var(--shadow);border-radius:14px}
-#planner{top:12px;left:12px;width:min(380px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;padding:14px}
+#planner{top:calc(12px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left));width:min(380px,calc(100vw - 24px));
+  max-height:calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overflow:auto;overscroll-behavior:contain;padding:14px}
 #planner h1{font-size:18px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
 #planner h1 span.badge{font-size:11px;font-weight:600;background:var(--accent);color:var(--accent-text);padding:2px 7px;border-radius:99px}
 .field{position:relative;margin-bottom:8px}
 .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
 .field .row{display:flex;gap:6px}
-input[type=text],input[type=number]{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
+input[type=text],input[type=number]{width:100%;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;font-size:16px}
 input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .iconbtn{flex:none;width:42px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font-size:18px}
 .suggest{position:absolute;left:0;right:0;top:100%;z-index:10;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-top:2px;box-shadow:var(--shadow);overflow:hidden}
@@ -72,28 +83,30 @@ summary{cursor:pointer;font-weight:600}
 #collapse{position:absolute;top:10px;right:10px;border:0;background:none;color:var(--muted);font-size:18px}
 #planner.min > :not(h1):not(#collapse){display:none}
 /* Navigation */
-#navtop{top:12px;left:12px;right:12px;padding:12px 14px;display:none;align-items:center;gap:14px;background:#1b5e20;color:#fff}
+#navtop{top:calc(8px + env(safe-area-inset-top));left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));padding:12px 14px;display:none;align-items:center;gap:14px;background:#1b5e20;color:#fff}
 #navtop .big{font-size:40px;line-height:1;width:48px;text-align:center}
 #navtop .dist{font-size:28px;font-weight:800}
 #navtop .instr{font-size:17px}
-#navtop .then{font-size:13px;opacity:.85;margin-top:2px}
-#navbottom{bottom:12px;left:12px;right:12px;padding:10px 14px;display:none;align-items:center;gap:12px;flex-wrap:wrap}
+#navtop .then{font-size:13px;opacity:.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#navtop .instr{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#navbottom{bottom:calc(8px + env(safe-area-inset-bottom));left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));padding:10px 14px;display:none;align-items:center;gap:12px;flex-wrap:wrap}
 #navbottom .stat{display:flex;flex-direction:column;min-width:64px}
 #navbottom .stat b{font-size:20px}
 #navbottom .stat span{font-size:11px;color:var(--muted)}
 #speed{width:62px;height:62px;border-radius:50%;border:4px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;font-size:20px}
 #speed small{font-size:10px;font-weight:500;color:var(--muted)}
 #speed.over{border-color:var(--warn);color:var(--warn)}
-#navbottom .spacer{flex:1}
+#navbottom .navstats{display:flex;align-items:center;gap:12px;min-width:0}
+#navbottom .navbtns{display:flex;gap:8px;margin-left:auto}
 #navbottom button{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-weight:600}
 #navbottom button.stop{background:var(--warn);color:#fff;border:0}
-#recenter{position:fixed;right:12px;bottom:110px;z-index:500;display:none;width:48px;height:48px;border-radius:50%;border:0;background:var(--panel);color:var(--text);box-shadow:var(--shadow);font-size:20px}
+#recenter{position:fixed;right:calc(12px + env(safe-area-inset-right));bottom:calc(var(--map-bottom, 100px) + 12px);z-index:500;display:none;width:48px;height:48px;border-radius:50%;border:0;background:var(--panel);color:var(--text);box-shadow:var(--shadow);font-size:20px}
 .truck-icon{font-size:30px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 .pin{width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .pause-icon{background:#f59f00;color:#111;font-weight:800;border-radius:6px;padding:1px 5px;font-size:12px;border:2px solid #fff;white-space:nowrap}
 #limit{width:62px;height:62px;border-radius:50%;border:6px solid #d0021b;background:#fff;color:#111;display:none;align-items:center;justify-content:center;font-weight:800;font-size:22px}
 #limit.show{display:flex}
-#navalert{top:122px;left:12px;right:12px;padding:8px 14px;display:none;font-weight:600;font-size:14px;background:#f59f00;color:#111}
+#navalert{top:var(--map-top, 122px);left:calc(8px + env(safe-area-inset-left));right:calc(8px + env(safe-area-inset-right));padding:8px 14px;display:none;font-weight:600;font-size:14px;background:#f59f00;color:#111}
 #navalert.show{display:block}
 .be{font-size:13px;margin-top:8px;padding:10px;border-radius:10px;background:var(--bg);border-left:4px solid #f5c400}
 .be h3{font-size:14px;margin:0 0 6px}
@@ -105,16 +118,44 @@ summary{cursor:pointer;font-weight:600}
 .presets button{padding:7px 4px;font-size:13px;line-height:1.2}
 .presets button small{display:block;font-weight:400;color:var(--muted);font-size:11px}
 .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
-select{width:100%;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
+select{width:100%;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;font-size:16px}
+.banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:10px}
+.banner span{flex:1 1 180px;min-width:0}
+.banner .secondary,.banner .primary{width:auto;padding:8px 12px;font-size:14px}
+.banner .x{border:0;background:none;color:var(--muted);font-size:16px;padding:4px 6px}
+.banner.resume{border-color:var(--accent)}
 body.navigating #planner{display:none}
 body.navigating #navtop,body.navigating #navbottom{display:flex}
 body.navigating #recenter{display:block}
 .leaflet-container{background:var(--bg)}
+/* la carte garde ses boutons et l'attribution visibles au-dessus des panneaux */
+.leaflet-bottom{bottom:var(--map-bottom, 0px)}
+.leaflet-top{top:var(--map-top, 0px)}
+@media (pointer:coarse){ .leaflet-control-zoom{display:none} }   /* sur téléphone : zoom avec deux doigts */
 @media (max-width:600px){
-  #planner{top:auto;bottom:0;left:0;width:100%;max-height:62vh;border-radius:14px 14px 0 0;padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  #planner{top:auto;bottom:0;left:0;width:100%;max-height:62vh;max-height:62dvh;border-radius:14px 14px 0 0;
+    padding:12px max(16px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))}
+  /* pendant la saisie, le panneau monte en haut de l'écran pour rester au-dessus du clavier */
+  #planner.typing{top:calc(8px + env(safe-area-inset-top));bottom:auto;left:8px;width:calc(100% - 16px);border-radius:14px;
+    max-height:calc(100dvh - 16px - env(safe-area-inset-top));padding-bottom:12px}
   #navtop .dist{font-size:24px}
   #navtop .instr{font-size:15px}
+  #navbottom{padding:8px 10px;gap:8px}
+  #navbottom .navstats{width:100%;justify-content:space-between;gap:6px}
+  #navbottom .stat{min-width:0}
+  #navbottom .stat b{font-size:18px}
+  #limit,#speed{width:54px;height:54px;font-size:19px}
+  #navbottom .navbtns{width:100%}
+  #navbottom .navbtns .stop{flex:1}
   #navtop .big{font-size:32px;width:38px}
+}
+/* téléphone à l'horizontale : bandeaux plus compacts pour laisser voir la route */
+@media (orientation:landscape) and (max-height:500px){
+  #navtop{right:auto;width:min(480px,58vw);padding:8px 12px}
+  #navtop .dist{font-size:22px} #navtop .instr{font-size:14px} #navtop .big{font-size:28px;width:34px}
+  #navbottom{left:auto;flex-wrap:nowrap;padding:8px 10px;gap:10px}
+  #navbottom .navstats{width:auto} #navbottom .navbtns{width:auto}
+  #limit,#speed{width:52px;height:52px;font-size:18px}
 }
 </style>
 </head>
@@ -122,8 +163,19 @@ body.navigating #recenter{display:block}
 <div id="map"></div>
 
 <section id="planner" class="panel" aria-label="Itinéraire">
-  <h1>🚛 GPS Camion <span class="badge">PL</span></h1>
+  <h1>🚚 GPS Camion <span class="badge">PL</span></h1>
   <button id="collapse" title="Réduire / agrandir">▾</button>
+
+  <div class="banner resume" id="resume" hidden>
+    <span id="resumeText"></span>
+    <button class="primary" id="resumeBtn">Reprendre</button>
+    <button class="x" id="resumeNo" aria-label="Ignorer">✕</button>
+  </div>
+  <div class="banner" id="install" hidden>
+    <span id="installText"></span>
+    <button class="secondary" id="installBtn">Installer</button>
+    <button class="x" id="installClose" aria-label="Fermer">✕</button>
+  </div>
 
   <div class="field">
     <label for="from">Départ</label>
@@ -196,11 +248,11 @@ body.navigating #recenter{display:block}
   <button class="primary" id="calc">Calculer l'itinéraire</button>
   <div class="msg" id="msg"></div>
   <div class="routes" id="routes"></div>
-  <div id="breaks"></div>
-  <div id="belgium"></div>
   <div class="btnrow" id="goRow" style="display:none">
     <button class="primary" id="start">▶ Démarrer le guidage</button>
   </div>
+  <div id="breaks"></div>
+  <div id="belgium"></div>
   <div class="steps" id="steps"></div>
 </section>
 
@@ -214,14 +266,17 @@ body.navigating #recenter{display:block}
 </div>
 <div id="navalert" class="panel"></div>
 <div id="navbottom" class="panel">
-  <div id="limit">–</div>
-  <div id="speed">–<small>km/h</small></div>
-  <div class="stat"><b id="navEta">–</b><span>Arrivée</span></div>
-  <div class="stat"><b id="navRemain">–</b><span>Restant</span></div>
-  <div class="stat"><b id="navDrive">–</b><span>Avant pause</span></div>
-  <div class="spacer"></div>
-  <button id="mute">🔊</button>
-  <button class="stop" id="stop">Arrêter</button>
+  <div class="navstats">
+    <div id="limit">–</div>
+    <div id="speed">–<small>km/h</small></div>
+    <div class="stat"><b id="navEta">–</b><span>Arrivée</span></div>
+    <div class="stat"><b id="navRemain">–</b><span>Restant</span></div>
+    <div class="stat"><b id="navDrive">–</b><span>Avant pause</span></div>
+  </div>
+  <div class="navbtns">
+    <button id="mute" aria-label="Voix">🔊</button>
+    <button class="stop" id="stop">Arrêter</button>
+  </div>
 </div>
 <button id="recenter" title="Recentrer">◎</button>
 
@@ -245,7 +300,8 @@ const store = {
 const map = L.map('map', { zoomControl: false }).setView([50.6, 4.6], 8);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap · itinéraires Valhalla · recherche Photon / Nominatim'
+  crossOrigin: true,   // permet de garder les tuiles en cache pour les zones sans réseau
+  maxZoom: 19, attribution: '© OpenStreetMap · Valhalla · Photon/Nominatim'
 }).addTo(map);
 
 const pin = c => L.divIcon({ className: '', html: `<div class="pin" style="background:${c}"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] });
@@ -375,6 +431,7 @@ function setupSearch(key){
   function pick(it){
     input.value = it.main + (it.sub ? ', ' + it.sub : '');
     box.hidden = true;
+    input.blur();   // ferme le clavier du téléphone
     setPlace(key, { lat: it.lat, lon: it.lon, name: input.value });
   }
 }
@@ -435,7 +492,7 @@ $('useLoc').addEventListener('click', () => {
     $('from').value = 'Ma position';
     msg('');
     setPlace('from', { lat: p.coords.latitude, lon: p.coords.longitude, name: 'Ma position' });
-  }, e => msg('Position introuvable : ' + e.message, true), { enableHighAccuracy: true, timeout: 15000 });
+  }, e => msg(geoError(e), true), { enableHighAccuracy: true, timeout: 15000 });
 });
 
 // Clic long / clic droit sur la carte : choisir départ ou arrivée
@@ -524,6 +581,7 @@ async function calculate(){
     $('vehDetails').open = false;
     msg(routes.snapped ? 'ℹ Départ ou arrivée en zone interdite aux PL : point déplacé sur la route accessible la plus proche.' : '');
     drawRoutes(true);
+    $('calc').scrollIntoView({ block: 'start', behavior: 'smooth' });
   } catch (e) {
     msg('Erreur : ' + e.message, true);
   } finally { $('calc').disabled = false; }
@@ -542,7 +600,7 @@ function drawRoutes(fit){
   const r = routes[active];
   routeLayers.push(L.polyline(r.shape, { color: '#fff', weight: 10, opacity: .9 }).addTo(map));
   routeLayers.push(L.polyline(r.shape, { color: css.getPropertyValue('--route'), weight: 6 }).addTo(map));
-  if (fit) map.fitBounds(routeLayers[routeLayers.length - 1].getBounds(), { padding: [40, 40] });
+  if (fit) map.fitBounds(routeLayers[routeLayers.length - 1].getBounds(), fitPadding());
 
   // Cartes des itinéraires
   $('routes').innerHTML = '';
@@ -610,10 +668,21 @@ function startNav(){
   routes = [nav.route]; active = 0; drawRoutes(false);
   say('Guidage démarré. ' + nav.route.maneuvers[0].instruction);
   watchId = navigator.geolocation.watchPosition(onPos, e => {
-    $('navInstr').textContent = 'Signal GPS perdu : ' + e.message;
+    $('navInstr').textContent = e.code === 1 ? geoError(e) : 'Signal GPS faible, guidage en attente de position…';
   }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
   navigator.wakeLock?.request('screen').then(w => wakeLock = w).catch(() => {});
+  // mémorise le trajet : si le téléphone recharge la page (appel, autre appli), on propose de reprendre
+  store.set('activeNav', { to: places.to, toLabel: $('to').value, t: Date.now() });
+  // le bouton Retour d'Android ne doit pas fermer le guidage par erreur
+  try { history.pushState({ nav: 1 }, ''); } catch {}
+  updateInsets();
 }
+window.addEventListener('popstate', () => {
+  if (!nav) return;
+  try { history.pushState({ nav: 1 }, ''); } catch {}
+  showAlert('Pour quitter le guidage, touchez « Arrêter ».');
+  setTimeout(() => { if (nav && $('navalert').textContent.startsWith('Pour quitter')) showAlert(''); }, 4000);
+});
 function stopNav(){
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
   watchId = null; nav = null;
@@ -622,6 +691,8 @@ function stopNav(){
   document.body.classList.remove('navigating');
   posMarker?.remove(); accCircle?.remove(); posMarker = accCircle = null;
   showAlert('');
+  store.set('activeNav', null);
+  updateInsets();
 }
 document.addEventListener('visibilitychange', () => {
   if (nav && document.visibilityState === 'visible')
@@ -652,7 +723,7 @@ async function onPos(p){
   const A = r.shape[snap.i], B = r.shape[Math.min(snap.i + 1, r.shape.length - 1)];
   const shown = snap.d < Math.min(30, Math.max(12, acc)) ? [A[0] + (B[0] - A[0]) * snap.t, A[1] + (B[1] - A[1]) * snap.t] : here;
   if (!posMarker) {
-    posMarker = L.marker(shown, { icon: L.divIcon({ className: 'truck-icon', html: '🚛', iconSize: [34, 34], iconAnchor: [17, 17] }), zIndexOffset: 1000 }).addTo(map);
+    posMarker = L.marker(shown, { icon: L.divIcon({ className: 'truck-icon', html: veh.ax >= 5 && veh.vl >= 15 ? '🚛' : '🚚', iconSize: [34, 34], iconAnchor: [17, 17] }), zIndexOffset: 1000 }).addTo(map);
     accCircle = L.circle(here, { radius: acc, weight: 1, fillOpacity: .1 }).addTo(map);
   } else { posMarker.setLatLng(shown); accCircle.setLatLng(here).setRadius(acc); }
   nav.last = shown;
@@ -724,6 +795,7 @@ async function onPos(p){
 
   if (remaining < 30 && !nav.spoken.arrived) {
     nav.spoken.arrived = true;
+    store.set('activeNav', null);
     $('navInstr').textContent = 'Vous êtes arrivé.'; $('navDist').textContent = '🏁';
     say('Vous êtes arrivé à destination.');
   }
@@ -1050,6 +1122,113 @@ $('collapse').addEventListener('click', () => {
   $('planner').classList.toggle('min');
   $('collapse').textContent = $('planner').classList.contains('min') ? '▸' : '▾';
 });
+
+/* ---------- Téléphone ---------- */
+function geoError(e){
+  if (e && e.code === 1) return 'Accès à la position refusé. Autorisez la localisation pour ce site dans les réglages du navigateur ou du téléphone, puis réessayez.';
+  if (e && e.code === 3) return 'Le GPS met trop de temps à répondre. Réessayez, de préférence à l\'extérieur.';
+  return 'Position indisponible pour le moment (GPS sans signal ?).';
+}
+
+// Zone de carte réellement visible (sous les panneaux) : boutons, attribution et cadrage s'y adaptent
+function updateInsets(){
+  const H = window.innerHeight;
+  let top = 0, bottom = 0;
+  if (document.body.classList.contains('navigating')) {
+    top = $('navtop').getBoundingClientRect().bottom + 8;
+    bottom = H - $('navbottom').getBoundingClientRect().top + 8;
+  } else if (matchMedia('(max-width:600px)').matches && !$('planner').classList.contains('typing')) {
+    bottom = H - $('planner').getBoundingClientRect().top;
+  }
+  const st = document.documentElement.style;
+  st.setProperty('--map-top', Math.max(0, Math.round(top)) + 'px');
+  st.setProperty('--map-bottom', Math.max(0, Math.round(bottom)) + 'px');
+}
+function fitPadding(){
+  updateInsets();
+  const css = getComputedStyle(document.documentElement);
+  const bottom = parseFloat(css.getPropertyValue('--map-bottom')) || 0;
+  const left = matchMedia('(min-width:601px)').matches && !document.body.classList.contains('navigating')
+    ? $('planner').getBoundingClientRect().right : 0;
+  return { paddingTopLeft: [left + 30, 30], paddingBottomRight: [30, bottom + 30] };
+}
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(updateInsets);
+  ['planner', 'navtop', 'navbottom'].forEach(id => ro.observe($(id)));
+}
+window.addEventListener('resize', updateInsets);
+updateInsets();
+
+// Pendant la saisie sur téléphone, le panneau passe en haut pour ne pas être caché par le clavier
+$('planner').addEventListener('focusin', e => {
+  if (e.target.matches('input[type=text], input[type=number]') && matchMedia('(max-width:600px)').matches) $('planner').classList.add('typing');
+});
+$('planner').addEventListener('focusout', () => setTimeout(() => {
+  if (!$('planner').contains(document.activeElement) || !document.activeElement.matches('input')) $('planner').classList.remove('typing');
+}, 250));
+
+// Installation sur l'écran d'accueil
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let installEvent = null;
+function offerInstall(text, button){
+  if (standalone || store.get('installDismissed', false)) return;
+  $('installText').textContent = text; $('installBtn').hidden = !button; $('install').hidden = false;
+}
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); installEvent = e;
+  offerInstall('Installez GPS Camion sur l\'écran d\'accueil : il s\'ouvrira en plein écran, comme une appli.', true);
+});
+$('installBtn').addEventListener('click', async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  try { await installEvent.userChoice; } catch {}
+  installEvent = null; $('install').hidden = true;
+});
+$('installClose').addEventListener('click', () => { $('install').hidden = true; store.set('installDismissed', true); });
+window.addEventListener('appinstalled', () => { $('install').hidden = true; });
+if (isIOS && !standalone) offerInstall('Pour l\'installer sur l\'iPhone : dans Safari, touchez Partager (carré avec une flèche), puis « Sur l\'écran d\'accueil ».', false);
+
+// Départ = ma position, si la localisation est déjà autorisée (pas de demande au démarrage)
+(async () => {
+  try {
+    if (!navigator.geolocation || !navigator.permissions) return;
+    const st = await navigator.permissions.query({ name: 'geolocation' });
+    if (st.state !== 'granted') return;
+    navigator.geolocation.getCurrentPosition(p => {
+      if (places.from || $('from').value.trim()) return;
+      $('from').value = 'Ma position';
+      setPlace('from', { lat: p.coords.latitude, lon: p.coords.longitude, name: 'Ma position' });
+    }, () => {}, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  } catch {}
+})();
+
+// Reprise d'un guidage interrompu (page rechargée par le téléphone)
+const pending = store.get('activeNav', null);
+if (pending && pending.to && Date.now() - pending.t < 12 * 3600 * 1000) {
+  $('resumeText').textContent = `Guidage interrompu vers ${pending.toLabel || 'votre destination'}.`;
+  $('resume').hidden = false;
+}
+$('resumeNo').addEventListener('click', () => { $('resume').hidden = true; store.set('activeNav', null); });
+$('resumeBtn').addEventListener('click', () => {
+  $('resume').hidden = true;
+  if (!navigator.geolocation) return msg('Géolocalisation indisponible sur cet appareil.', true);
+  places.to = pending.to; $('to').value = pending.toLabel || '';
+  toMarker?.remove(); toMarker = L.marker([pending.to.lat, pending.to.lon], { icon: pin('#c92a2a') }).addTo(map);
+  msg('Recherche de votre position…');
+  navigator.geolocation.getCurrentPosition(async p => {
+    places.from = { lat: p.coords.latitude, lon: p.coords.longitude, name: 'Ma position' };
+    $('from').value = 'Ma position';
+    fromMarker?.remove(); fromMarker = L.marker([places.from.lat, places.from.lon], { icon: pin('#2b8a3e') }).addTo(map);
+    await calculate();
+    if (routes.length) startNav();
+  }, e => msg(geoError(e), true), { enableHighAccuracy: true, timeout: 20000 });
+});
+
+// Mode hors-ligne : l'appli s'ouvre sans réseau et garde les cartes déjà vues
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 
 // Mode démo : ?demo=1 simule un trajet le long de l'itinéraire (pour tester sans rouler)
 if (new URLSearchParams(location.search).has('demo')) {

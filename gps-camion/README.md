@@ -28,10 +28,23 @@ L'itinéraire est analysé tronçon par tronçon (région, type de route, limita
 - **Zones de basses émissions** Anvers, Gand, Bruxelles (contours OpenStreetMap) : avertissement à la planification et à l'entrée, selon le carburant et la norme Euro (Anvers/Gand : diesel Euro V minimum, Euro IV payant ; Bruxelles : diesel Euro VI).
 - Position du camion accrochée à la route et recalcul uniquement sur des positions GPS fiables (précision ≤ 60 m).
 
-## Utilisation
-Ouvrir `index.html` dans un navigateur. Pour le GPS sur téléphone, la page doit être servie en **HTTPS** (par exemple via GitHub Pages), sinon le navigateur refuse la géolocalisation.
+## Sur téléphone 📱
+L'appli s'installe sur l'écran d'accueil et s'ouvre en plein écran, comme une appli normale.
 
-Mode test sans rouler : ajouter `?demo=1` à l'adresse, puis « Démarrer le guidage » simule le trajet.
+1. **Mettre l'appli en ligne (une seule fois)** : sur GitHub, dépôt `Roidu777/Rui` → **Settings** → **Pages** → *Build and deployment* → Source **Deploy from a branch** → branche **`claude/sleepy-ride-l5zp1q`**, dossier **`/ (root)`** → **Save**. Après une ou deux minutes, l'appli est à l'adresse :
+   **https://roidu777.github.io/Rui/gps-camion/**
+2. **Ouvrir cette adresse sur le téléphone**, puis l'installer :
+   - iPhone : dans **Safari**, bouton **Partager** (carré avec une flèche) → **Sur l'écran d'accueil**.
+   - Android : dans **Chrome**, bouton **Installer** affiché dans l'appli, ou menu **⋮** → **Installer l'application**.
+3. **Autoriser la localisation** quand le téléphone le demande.
+
+Conseils de route :
+- Laissez l'appli **au premier plan**. Une appli web ne reçoit plus le GPS quand on change d'appli ou qu'on verrouille l'écran. Pendant le guidage, l'écran reste allumé automatiquement.
+- Téléphone **sur un support et branché** : GPS et écran allumé consomment beaucoup de batterie.
+- Si le téléphone recharge l'appli (appel, autre appli), elle propose de **reprendre le guidage**.
+- **Sans réseau**, l'appli s'ouvre quand même et garde les cartes déjà affichées (environ 3 000 tuiles). Le calcul d'un itinéraire demande du réseau. Si le réseau coupe en route, le guidage continue sur l'itinéraire déjà calculé.
+
+Sur ordinateur, on peut aussi ouvrir `index.html` directement. Mode test sans rouler : ajouter `?demo=1` à l'adresse, puis « Démarrer le guidage » simule le trajet.
 
 ## Services utilisés (gratuits, OpenStreetMap)
 - Carte : tuiles OpenStreetMap
