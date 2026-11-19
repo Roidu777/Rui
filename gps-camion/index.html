@@ -26,6 +26,7 @@
   --shadow:0 4px 18px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 #map{position:fixed;inset:0;z-index:0}
@@ -45,6 +46,7 @@ input:focus{outline:2px solid var(--accent);outline-offset:-1px}
 .suggest div:last-child{border-bottom:none}
 .suggest div:hover,.suggest div.sel{background:var(--bg)}
 .suggest small{color:var(--muted)}
+.suggest div.info{cursor:default;background:none}
 details{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0}
 summary{cursor:pointer;font-weight:600}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
@@ -99,6 +101,10 @@ summary{cursor:pointer;font-weight:600}
 .be .bad{color:var(--warn);font-weight:600}
 .be .good{color:var(--ok);font-weight:600}
 .be small{color:var(--muted)}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.presets button{padding:7px 4px;font-size:13px;line-height:1.2}
+.presets button small{display:block;font-weight:400;color:var(--muted);font-size:11px}
+.hint{font-size:12px;color:var(--muted);margin:6px 0 0}
 select{width:100%;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font:inherit}
 body.navigating #planner{display:none}
 body.navigating #navtop,body.navigating #navbottom{display:flex}
@@ -136,13 +142,33 @@ body.navigating #recenter{display:block}
 
   <details id="vehDetails">
     <summary>Gabarit du véhicule <span id="vehSummary" style="font-weight:400;color:var(--muted)"></span></summary>
+    <div class="presets">
+      <button class="secondary" data-preset="p12">Porteur 12 t<small>2 essieux</small></button>
+      <button class="secondary" data-preset="p19">Porteur 19 t<small>2 essieux</small></button>
+      <button class="secondary" data-preset="p26">Porteur 26 t<small>3 essieux</small></button>
+      <button class="secondary" data-preset="p32">Porteur 32 t<small>4 essieux</small></button>
+      <button class="secondary" data-preset="semi">Semi 44 t<small>tracteur</small></button>
+      <button class="secondary" data-preset="vul">VUL 3,5 t<small>camionnette</small></button>
+    </div>
+    <p class="hint">Partez du modèle le plus proche, puis corrigez avec les vraies valeurs de votre camion. La hauteur compte le point le plus haut (caisse, groupe frigo, déflecteur). La MMA est la case F.2 du certificat d'immatriculation.</p>
     <div class="grid">
       <div class="field"><label for="vh">Hauteur (m)</label><input id="vh" type="number" step="0.05" min="1" max="6"></div>
       <div class="field"><label for="vw">Largeur (m)</label><input id="vw" type="number" step="0.05" min="1" max="4"></div>
       <div class="field"><label for="vl">Longueur (m)</label><input id="vl" type="number" step="0.5" min="3" max="30"></div>
-      <div class="field"><label for="vt">Poids total (t)</label><input id="vt" type="number" step="0.5" min="1" max="60"></div>
-      <div class="field"><label for="va">Charge/essieu (t)</label><input id="va" type="number" step="0.5" min="1" max="20"></div>
+      <div class="field"><label for="vt">MMA (t)</label><input id="vt" type="number" step="0.5" min="1" max="60"></div>
+      <div class="field"><label for="ax">Essieux</label>
+        <select id="ax"><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 ou plus</option></select></div>
+      <div class="field"><label for="va">Charge max/essieu (t)</label><input id="va" type="number" step="0.5" min="1" max="20"></div>
       <div class="field"><label for="vs">Vitesse max (km/h)</label><input id="vs" type="number" step="5" min="30" max="130"></div>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="trailer"> Remorque attelée</label>
+    </div>
+    <div class="grid" id="trailerFields" hidden>
+      <div class="field"><label for="tt">MMA remorque (t)</label><input id="tt" type="number" step="0.5" min="0.75" max="40"></div>
+      <div class="field"><label for="tx">Essieux remorque</label>
+        <select id="tx"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+      <div class="field" style="grid-column:1/3"><label for="tl">Longueur de l'ensemble (m)</label><input id="tl" type="number" step="0.25" min="5" max="30"></div>
     </div>
     <div class="checks">
       <label><input type="checkbox" id="hazmat"> Matières dangereuses (ADR)</label>
@@ -154,11 +180,6 @@ body.navigating #recenter{display:block}
         <select id="euro"><option value="6">Euro VI</option><option value="5">Euro V / EEV</option><option value="4">Euro IV</option><option value="3">Euro III</option><option value="2">Euro II</option><option value="1">Euro I</option><option value="0">Euro 0</option></select></div>
       <div class="field" style="grid-column:1/3"><label for="co2">Classe CO₂ (péage Flandre, voir certificat / Viapass)</label>
         <select id="co2"><option value="1">Classe 1 (défaut, immatriculé avant 07/2019)</option><option value="2">Classe 2</option><option value="3">Classe 3</option><option value="4">Classe 4</option></select></div>
-    </div>
-    <div class="btnrow" style="margin-top:8px">
-      <button class="secondary" data-preset="porteur">Porteur 19 t</button>
-      <button class="secondary" data-preset="semi">Semi 44 t</button>
-      <button class="secondary" data-preset="vul">VUL 3,5 t</button>
     </div>
   </details>
 
@@ -209,6 +230,7 @@ body.navigating #recenter{display:block}
 'use strict';
 const VBASE = 'https://valhalla1.openstreetmap.de/';
 const PHOTON = 'https://photon.komoot.io/api/';
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search';   // secours, uniquement sur Entrée (pas d'autocomplétion)
 const MAX_DRIVE = 4.5 * 3600;   // réglementation UE : 4 h 30 de conduite
 const BREAK = 45 * 60;          // puis 45 min de pause
 const DAILY = 9 * 3600;         // 9 h de conduite par jour
@@ -223,37 +245,64 @@ const store = {
 const map = L.map('map', { zoomControl: false }).setView([50.6, 4.6], 8);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap · itinéraires Valhalla · recherche Photon'
+  maxZoom: 19, attribution: '© OpenStreetMap · itinéraires Valhalla · recherche Photon / Nominatim'
 }).addTo(map);
 
 const pin = c => L.divIcon({ className: '', html: `<div class="pin" style="background:${c}"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] });
 let fromMarker, toMarker, routeLayers = [], pauseLayers = [], posMarker, accCircle;
 
 /* ---------- Véhicule ---------- */
+// Modèles de départ : à corriger avec les valeurs réelles du camion
 const PRESETS = {
-  semi:    { vh: 4.0, vw: 2.55, vl: 16.5, vt: 44, va: 11.5, vs: 90 },
-  porteur: { vh: 3.8, vw: 2.55, vl: 10,   vt: 19, va: 11.5, vs: 90 },
-  vul:     { vh: 2.8, vw: 2.1,  vl: 6.5,  vt: 3.5, va: 2,   vs: 110 }
+  p12:  { vh: 3.6, vw: 2.55, vl: 8.5,  vt: 12,  ax: 2, va: 8,    vs: 90 },
+  p19:  { vh: 3.8, vw: 2.55, vl: 10,   vt: 19,  ax: 2, va: 11.5, vs: 90 },
+  p26:  { vh: 3.9, vw: 2.55, vl: 11.5, vt: 26,  ax: 3, va: 11.5, vs: 90 },
+  p32:  { vh: 3.8, vw: 2.55, vl: 10.5, vt: 32,  ax: 4, va: 10,   vs: 90 },
+  semi: { vh: 4.0, vw: 2.55, vl: 16.5, vt: 44,  ax: 5, va: 11.5, vs: 90 },
+  vul:  { vh: 2.8, vw: 2.1,  vl: 6.5,  vt: 3.5, ax: 2, va: 2,    vs: 110 }
 };
-const veh = Object.assign({}, PRESETS.semi, { hazmat: false, fuel: 'diesel', euro: 6, co2: 1 }, store.get('veh', {}));
-[['fuel', v => v], ['euro', Number], ['co2', Number]].forEach(([k, cast]) => {
-  $(k).value = String(veh[k]);
-  $(k).addEventListener('change', () => { veh[k] = cast($(k).value); saveVeh(); });
+let savedVeh = store.get('veh', null);
+// ancien réglage par défaut (semi 44 t jamais modifié) : on repart sur un porteur
+if (savedVeh && savedVeh.ax == null && savedVeh.vt === 44 && savedVeh.vl === 16.5) savedVeh = null;
+const veh = Object.assign({}, PRESETS.p19,
+  { hazmat: false, fuel: 'diesel', euro: 6, co2: 1, trailer: false, tt: 10, tx: 2, tl: 18.75 }, savedVeh || {});
+if (!savedVeh) $('vehDetails').open = true;   // première ouverture : faire saisir le gabarit réel
+// Valeurs de l'ensemble roulant (camion + remorque éventuelle)
+const eff = () => ({
+  weight: veh.vt + (veh.trailer ? veh.tt : 0),
+  length: veh.trailer ? Math.max(veh.tl, veh.vl) : veh.vl,
+  axles: veh.ax + (veh.trailer ? veh.tx : 0)
 });
-['vh','vw','vl','vt','va','vs'].forEach(k => {
+const W = () => eff().weight;
+[['fuel', v => v], ['euro', Number], ['co2', Number], ['ax', Number], ['tx', Number]].forEach(([k, cast]) => {
+  $(k).value = String(veh[k]);
+  $(k).addEventListener('change', () => { veh[k] = cast($(k).value); vehChanged(); });
+});
+const NUM_FIELDS = ['vh','vw','vl','vt','va','vs','tt','tl'];
+NUM_FIELDS.forEach(k => {
   $(k).value = veh[k];
-  $(k).addEventListener('change', () => { veh[k] = parseFloat($(k).value) || veh[k]; saveVeh(); });
+  $(k).addEventListener('change', () => { veh[k] = parseFloat($(k).value.replace(',', '.')) || veh[k]; $(k).value = veh[k]; vehChanged(); });
 });
 $('hazmat').checked = !!veh.hazmat;
-$('hazmat').addEventListener('change', () => { veh.hazmat = $('hazmat').checked; saveVeh(); });
+$('hazmat').addEventListener('change', () => { veh.hazmat = $('hazmat').checked; vehChanged(); });
+$('trailer').checked = !!veh.trailer;
+$('trailer').addEventListener('change', () => { veh.trailer = $('trailer').checked; vehChanged(); });
 document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => {
-  Object.assign(veh, PRESETS[b.dataset.preset]);
-  ['vh','vw','vl','vt','va','vs'].forEach(k => $(k).value = veh[k]);
-  saveVeh();
+  Object.assign(veh, PRESETS[b.dataset.preset], { trailer: false });
+  NUM_FIELDS.forEach(k => $(k).value = veh[k]);
+  $('ax').value = String(veh.ax); $('trailer').checked = false;
+  vehChanged();
 }));
+// gabarit modifié par l'utilisateur : l'itinéraire affiché n'est plus à jour
+function vehChanged(){
+  saveVeh();
+  if (routes.length && !nav) msg('Gabarit modifié : appuyez sur « Calculer l\'itinéraire » pour mettre le trajet à jour.');
+}
 function saveVeh(){
   store.set('veh', veh);
-  $('vehSummary').textContent = `· ${fmtNum(veh.vh)} m · ${fmtNum(veh.vt)} t · ${veh.fuel === 'elec' ? 'ZEV' : 'Euro ' + ['0','I','II','III','IV','V','VI'][veh.euro]}${veh.hazmat ? ' · ADR' : ''}`;
+  $('trailerFields').hidden = !veh.trailer;
+  const kind = veh.vt <= 3.5 ? 'VUL' : (veh.ax >= 5 && veh.vl >= 15 ? 'Semi' : 'Porteur');
+  $('vehSummary').textContent = `· ${kind} ${fmtNum(veh.vt)} t${veh.trailer ? ' + remorque ' + fmtNum(veh.tt) + ' t' : ''} · ${fmtNum(veh.vh)} m · ${veh.fuel === 'elec' ? 'ZEV' : 'Euro ' + ['0','I','II','III','IV','V','VI'][veh.euro]}${veh.hazmat ? ' · ADR' : ''}`;
 }
 saveVeh();
 
@@ -270,7 +319,7 @@ function setupSearch(key){
   const box = document.createElement('div');
   box.className = 'suggest'; box.hidden = true;
   input.closest('.field').appendChild(box);
-  let timer, items = [], sel = -1, ctrl;
+  let timer, items = [], sel = -1, ctrl, searching = false;
   input.addEventListener('input', () => {
     places[key] = null;
     clearTimeout(timer);
@@ -281,20 +330,37 @@ function setupSearch(key){
       const c = map.getCenter();
       try {
         const r = await fetch(`${PHOTON}?q=${encodeURIComponent(q)}&limit=6&lang=fr&lat=${c.lat}&lon=${c.lng}`, { signal: ctrl.signal });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
         const j = await r.json();
         items = j.features.map(f => ({ lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], ...label(f.properties) }));
         sel = -1; render();
-      } catch (e) { if (e.name !== 'AbortError') box.hidden = true; }
+        if (!items.length) info('Aucune suggestion. Appuyez sur Entrée pour une recherche complète.');
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        items = []; info('Suggestions indisponibles. Appuyez sur Entrée pour chercher.');
+      }
     }, 300);
   });
-  input.addEventListener('keydown', e => {
+  input.addEventListener('keydown', async e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!box.hidden && items.length) return pick(items[Math.max(sel, 0)]);
+      const q = input.value.trim();
+      if (q.length < 3 || searching) return;
+      clearTimeout(timer); ctrl?.abort();
+      searching = true; info('Recherche…');
+      try { items = await geocodeFallback(q); sel = -1; render(); if (!items.length) info('Adresse introuvable. Vérifiez l\'orthographe ou ajoutez la commune.'); }
+      catch { info('Recherche impossible pour le moment (service indisponible ou pas de réseau).'); }
+      finally { searching = false; }
+      return;
+    }
     if (box.hidden) return;
     if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, items.length - 1); render(); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); render(); e.preventDefault(); }
-    else if (e.key === 'Enter' && items.length) { pick(items[Math.max(sel, 0)]); e.preventDefault(); }
     else if (e.key === 'Escape') box.hidden = true;
   });
   input.addEventListener('blur', () => setTimeout(() => box.hidden = true, 200));
+  function info(t){ box.innerHTML = `<div class="info"><small>${esc(t)}</small></div>`; box.hidden = false; }
   function render(){
     box.innerHTML = '';
     items.forEach((it, i) => {
@@ -312,12 +378,36 @@ function setupSearch(key){
     setPlace(key, { lat: it.lat, lon: it.lon, name: input.value });
   }
 }
+// Belgique : numéro après la rue (« Rue de la Loi 16 ») ; France : avant (« 16 rue de Rivoli »)
+function streetLine(street, num, cc){
+  if (!street) return '';
+  if (!num) return street;
+  return /^(be|nl|de|lu)$/i.test(cc || '') ? `${street} ${num}` : `${num} ${street}`;
+}
 function label(p){
-  const street = p.street ? `${p.housenumber ? p.housenumber + ' ' : ''}${p.street}` : '';
+  const street = streetLine(p.street, p.housenumber, p.countrycode);
   const main = p.name || street || p.city || '?';
   const sub = [p.name && street ? street : '', p.postcode, p.city !== main ? p.city : '', p.country]
     .filter(Boolean).join(' ');
   return { main, sub };
+}
+// Recherche de secours (Nominatim) : 1 requête par seconde au plus, seulement sur action explicite
+let lastNominatim = 0;
+async function geocodeFallback(q){
+  const wait = lastNominatim + 1100 - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  lastNominatim = Date.now();
+  // pas de biais sur la zone affichée : « Namur » doit donner la ville, pas la Porte de Namur à Bruxelles
+  const r = await fetch(`${NOMINATIM}?format=jsonv2&limit=6&addressdetails=1&accept-language=fr&q=${encodeURIComponent(q)}`);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return (await r.json()).map(x => {
+    const a = x.address || {};
+    const city = a.city || a.town || a.village || a.municipality || '';
+    const street = streetLine(a.road, a.house_number, a.country_code);
+    const main = x.name || street || city || x.display_name.split(',')[0];
+    const sub = [x.name && street ? street : '', a.postcode, city !== main ? city : '', a.country].filter(Boolean).join(' ');
+    return { lat: +x.lat, lon: +x.lon, main, sub };
+  });
 }
 function setPlace(key, p){
   places[key] = p;
@@ -374,7 +464,7 @@ function buildRequest(from, to, heading, snap, exclude){
     locations: [loc0, { lat: to.lat, lon: to.lon, ...snap }],
     costing: 'truck',
     costing_options: { truck: {
-      height: veh.vh, width: veh.vw, length: veh.vl, weight: veh.vt, axle_load: veh.va,
+      height: veh.vh, width: veh.vw, length: eff().length, weight: eff().weight, axle_load: veh.va, axle_count: eff().axles,
       hazmat: !!veh.hazmat, top_speed: veh.vs,
       use_tolls: opts.noToll ? 0 : 0.5,
       use_highways: opts.noHighway ? 0 : 1,
@@ -431,6 +521,7 @@ async function calculate(){
   try {
     routes = await computeRoutes(places.from, places.to);
     active = 0;
+    $('vehDetails').open = false;
     msg(routes.snapped ? 'ℹ Départ ou arrivée en zone interdite aux PL : point déplacé sur la route accessible la plus proche.' : '');
     drawRoutes(true);
   } catch (e) {
@@ -680,15 +771,15 @@ const VIAPASS = {
          '6-1':[.132,.233,.271],'6-2':[.132,.233,.271],'6-3':[.132,.233,.271],'6-4':[.132,.233,.271],'zev':[.024,.044,.051] }
 };
 const tollKey = () => veh.fuel === 'elec' ? 'zev' : veh.euro >= 6 ? '6-' + (veh.co2 || 1) : String(veh.euro);
-const tollBand = () => veh.vt < 12 ? 0 : veh.vt <= 32 ? 1 : 2;
+const tollBand = () => W() < 12 ? 0 : W() <= 32 ? 1 : 2;
 
 // Limitation applicable au camion sur un tronçon (km/h), ou null si inconnue
 const URBAN_CLASSES = ['residential', 'service_other', 'unclassified', 'tertiary'];
 function truckLimit(e, cc, st){
   const posted = e.speed_limit > 0 && e.speed_limit < 200 ? e.speed_limit : null;
   let legal = null;
-  if (cc === 'BE' && veh.vt > 3.5) {
-    const heavy = veh.vt > 7.5, cls = e.road_class, lanes = e.lane_count || 1;
+  if (cc === 'BE' && W() > 3.5) {
+    const heavy = W() > 7.5, cls = e.road_class, lanes = e.lane_count || 1;
     const separated = (e.traversability === 'forward' || e.traversability === 'backward') && (cls === 'trunk' || cls === 'primary') && lanes >= 2;
     const fourLanes = !separated && (cls === 'trunk' || cls === 'primary') && lanes >= 2;
     if (cls === 'motorway') legal = 90;                                      // autoroute : 90
@@ -791,7 +882,7 @@ async function analyze(route){
     }
     // bilan Belgique : km par région, péage kilométrique estimé, LEZ traversées
     const be = { km: { VLG: 0, WAL: 0, BRU: 0 }, toll: { VLG: 0, WAL: 0, BRU: 0 }, lez: [] };
-    const key = tollKey(), band = tollBand(), taxed = veh.vt > 3.5;
+    const key = tollKey(), band = tollBand(), taxed = W() > 3.5;
     let lastZone = null;
     for (let i = 0; i < n - 1; i++) {
       const reg = route.reg[i + 1] || route.reg[i], km = (route.cum[i + 1] - route.cum[i]) / 1000, cls = route.cls[i + 1] || route.cls[i];
@@ -823,7 +914,7 @@ async function computeRoutes(from, to, heading){
   for (let it = 0; it < 5; it++) {
     rs = await fetchRoute(from, to, heading, exclude);
     await Promise.all(rs.map(analyze));
-    if (veh.vt <= 3.5) break;
+    if (W() <= 3.5) break;
     const t = rs.flatMap(r => r.bruTunnels || []);
     if (!t.length) break;
     t.forEach(x => { exclude.push({ lat: x.lat, lon: x.lon }); if (!avoided.includes(x.name)) avoided.push(x.name); });
@@ -847,14 +938,14 @@ function renderBelgium(r){
   const E = veh.fuel === 'elec' ? 'zéro émission' : 'Euro ' + ['0','I','II','III','IV','V','VI'][veh.euro] + (veh.euro >= 6 ? `, CO₂ classe ${veh.co2}` : '');
   const bands = ['3,5–12 t', '12–32 t', '> 32 t'];
   let h = `<div class="be"><h3>🇧🇪 Belgique : ${fmtKm(totalKm)}</h3><p>${parts}</p>`;
-  if (veh.vt > 3.5) {
+  if (W() > 3.5) {
     h += `<p>💶 Prélèvement kilométrique estimé : <b>${eur(tollTotal)}</b>${tollParts ? `<br><small>${tollParts}</small>` : ''}<br>
-      <small>Barème Viapass du 01/07/2026, ${bands[tollBand()]}, ${E}. Bruxelles : toutes les routes ; Flandre et Wallonie : estimation sur autoroutes et grandes routes régionales. Le montant exact est celui de votre OBU.</small></p>`;
+      <small>Barème Viapass du 01/07/2026, ${bands[tollBand()]}${veh.trailer ? ' (camion + remorque : réglez aussi cette catégorie sur votre OBU)' : ''}, ${E}. Bruxelles : toutes les routes ; Flandre et Wallonie : estimation sur autoroutes et grandes routes régionales. Le montant exact est celui de votre OBU.</small></p>`;
     h += r.avoidedTunnels?.length
       ? `<p class="good">🚇 Tunnels bruxellois évités (interdits > 3,5 t) : ${r.avoidedTunnels.map(esc).join(', ')}</p>`
       : `<p>🚇 Aucun tunnel bruxellois sur le trajet.</p>`;
     if (r.bruTunnels?.length) h += `<p class="bad">⚠ Impossible d'éviter le tunnel ${r.bruTunnels.map(t => esc(t.name)).join(', ')} : vérifiez la signalisation.</p>`;
-    h += `<p>🚦 Vitesses PL appliquées (${veh.vt > 7.5 ? '> 7,5 t' : '3,5–7,5 t'}) : autoroute 90 · 2x2 voies séparées 90 · autres routes ${veh.vt > 7.5 ? '60' : 'Flandre 70, Wallonie 90, Bruxelles 70'} · agglomération 50 (Bruxelles 30), ou moins si panneau.</p>`;
+    h += `<p>🚦 Vitesses PL appliquées (${W() > 7.5 ? '> 7,5 t' : '3,5–7,5 t'}) : autoroute 90 · 2x2 voies séparées 90 · autres routes ${W() > 7.5 ? '60' : 'Flandre 70, Wallonie 90, Bruxelles 70'} · agglomération 50 (Bruxelles 30), ou moins si panneau.</p>`;
   }
   be.lez.forEach(z => {
     const st = lezStatus(z);
